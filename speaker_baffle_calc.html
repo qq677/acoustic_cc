@@ -252,6 +252,7 @@ body {
       <div class="nl-chart-wrap"><canvas id="chartCmsFit"></canvas></div>
       <div class="nl-chart-wrap"><canvas id="chartNlSPL"></canvas></div>
       <div class="nl-chart-wrap"><canvas id="chartNlDisp"></canvas></div>
+      <div class="nl-chart-wrap"><canvas id="chartNlEQ"></canvas></div>
       <div class="nl-chart-wrap" style="min-width:680px;"><canvas id="chartTHD"></canvas></div>
     </div>
   </div>
@@ -747,7 +748,7 @@ function getFreqRange() {
 }
 
 let chartSPL = null, chartDisp = null, chartEQ = null;
-let chartNlSPL = null, chartNlDisp = null, chartTHD = null;
+let chartNlSPL = null, chartNlDisp = null, chartNlEQ = null, chartTHD = null;
 let linearResult = null;
 let currentFreqs = null;
 
@@ -985,10 +986,60 @@ async function calcNonlinear() {
     nlFreqs[i] = fMin * Math.pow(fMax / fMin, i / (nPts - 1));
   }
 
+  // 计算非线性 EQ 电压：用描述函数反解达到 Xmax 需要的 RMS 电压
+  const eqVNl = new Float64Array(nPts);
+  const eqVLin = new Float64Array(nPts);  // 线性参考
+  const xmax = parseFloat(document.getElementById('xmax').value) || 0.65;
+  const vmax = parseFloat(document.getElementById('vmax').value) || 2.2;
+  const XmaxSI = xmax / 1000;  // mm → m
+  for (let i = 0; i < nPts; i++) {
+    const w = 2 * Math.PI * nlFreqs[i];
+    // 线性 V_to_Xmax
+    const ZmLin = new Complex(pSI.Rms, w * pSI.Mms - 1 / (w * pSI.Cms));
+    const ZinLin = new Complex(pSI.Re, w * pSI.Le).add(new Complex(pSI.Bl * pSI.Bl, 0).div(ZmLin));
+    const I_lin = new Complex(1, 0).div(ZinLin);  // 1V激励
+    const X_per_V_lin = I_lin.mul(pSI.Bl).div(ZmLin).abs() / w;  // 峰值 m/V
+    eqVLin[i] = Math.min((X_per_V_lin > 1e-15 ? XmaxSI / X_per_V_lin : 1e9), vmax);
+
+    // 非线性 V_to_Xmax：迭代反解描述函数
+    let Vg = eqVLin[i];  // 初始猜测 = 线性解
+    if (Vg < vmax && Vg > 0.001) {
+      for (let iter = 0; iter < 20; iter++) {
+        const Vp = Vg * Math.SQRT2;
+        // 描述函数找当前电压下的位移
+        let Xamp = X_per_V_lin * Vg;  // 线性估计作为初值
+        let BlEq = pSI.Bl, kEq = 1 / pSI.Cms;
+        for (let inner = 0; inner < 25; inner++) {
+          let blInt = 0, kInt = 0;
+          for (let j = 0; j < 64; j++) {
+            const th = 2 * Math.PI * j / 64;
+            const xj = Xamp * Math.sin(th);
+            blInt += blSpline.eval(xj * 1000) * Math.sin(th) * Math.sin(th);
+            const cv = cmsSpline.eval(xj * 1000);
+            kInt += (1 / (cv / 1000)) * Math.sin(th) * Math.sin(th);
+          }
+          BlEq = (2 / 64) * blInt;
+          kEq = (2 / 64) * kInt;
+          const Zm = new Complex(pSI.Rms, w * pSI.Mms - kEq / w);
+          const Zin = new Complex(pSI.Re, w * pSI.Le).add(new Complex(BlEq * BlEq, 0).div(Zm));
+          const I_f = new Complex(Vp, 0).div(Zin);
+          const Xnew = I_f.mul(BlEq).div(Zm).abs() / w;
+          if (Math.abs(Xnew - Xamp) / Math.max(Xamp, 1e-12) < 1e-5) { Xamp = Xnew; break; }
+          Xamp = Xnew;
+        }
+        // 调整电压猜测
+        const ratio = XmaxSI / Math.max(Xamp, 1e-12);
+        if (Math.abs(ratio - 1) < 0.001) break;
+        Vg = Math.min(Vg * ratio, vmax * 2);
+      }
+    }
+    eqVNl[i] = Math.min(Vg, vmax);
+  }
+
   if (mode === 'harmonic') {
     // 快速模式：同步完成
     const result = describingFunction(blSpline, cmsSpline, pSI, nlFreqs, vrms, dist);
-    showNonlinearResults(result, nlFreqs);
+    showNonlinearResults(result, nlFreqs, eqVNl, eqVLin);
     statusEl.textContent = '完成（快速谐波平衡）';
   } else {
     // 时域模式：逐步计算，显示进度
@@ -1014,12 +1065,12 @@ async function calcNonlinear() {
         await new Promise(r => setTimeout(r, 10));
       }
     }
-    showNonlinearResults({ spl, disp, thdTotal: thdT, thd2, thd3 }, nlFreqs);
+    showNonlinearResults({ spl, disp, thdTotal: thdT, thd2, thd3 }, nlFreqs, eqVNl, eqVLin);
     statusEl.textContent = `完成（精细时域求解 · ${nPts} 频点）`;
   }
 }
 
-function showNonlinearResults(nlResult, nlFreqs) {
+function showNonlinearResults(nlResult, nlFreqs, eqVNl, eqVLin) {
   document.getElementById('nlCharts').style.display = 'flex';
 
   const p = getParams();
@@ -1030,6 +1081,7 @@ function showNonlinearResults(nlResult, nlFreqs) {
 
   const freqArr = Array.from(nlFreqs);
   const fMin = nlFreqs[0], fMax = nlFreqs[nlFreqs.length - 1];
+  const vmax = parseFloat(document.getElementById('vmax').value) || 2.2;
 
   // 线性 SPL 插值到非线性频点
   const linSplInterp = new Float64Array(nlFreqs.length);
@@ -1109,6 +1161,37 @@ function showNonlinearResults(nlResult, nlFreqs) {
   chartNlDisp.data.datasets[2].data = new Array(nlFreqs.length).fill(p.Xmax);
   updateX(chartNlDisp);
   chartNlDisp.update('none');
+
+  // EQ电压对比图（非线性 vs 线性）
+  if (eqVNl && eqVLin) {
+    if (!chartNlEQ) {
+      chartNlEQ = new Chart(document.getElementById('chartNlEQ').getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            { label: 'EQ电压 线性', data: [], borderColor: '#61afef', borderWidth: 1.5, pointRadius: 0 },
+            { label: 'EQ电压 非线性', data: [], borderColor: '#e06c75', borderWidth: 1.5, pointRadius: 0 },
+            { label: 'Vmax', data: [], borderColor: '#666', borderWidth: 1, borderDash: [5,5], pointRadius: 0, fill: false }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: false,
+          scales: {
+            x: { type: 'logarithmic', title: { display: true, text: '频率 (Hz)', color: '#abb2bf' }, min: 20, max: 20000, ticks: { color: '#666', callback: v => v>=1000?(v/1000)+'k':v }, grid: { color: '#2c313a' } },
+            y: { title: { display: true, text: '电压 (Vrms)', color: '#abb2bf' }, ticks: { color: '#666' }, grid: { color: '#2c313a' }, min: 0 }
+          },
+          plugins: { legend: { labels: { color: '#abb2bf' } } }
+        }
+      });
+    }
+    chartNlEQ.data.labels = freqArr;
+    chartNlEQ.data.datasets[0].data = Array.from(eqVLin);
+    chartNlEQ.data.datasets[1].data = Array.from(eqVNl);
+    chartNlEQ.data.datasets[2].data = new Array(nlFreqs.length).fill(vmax);
+    updateX(chartNlEQ);
+    chartNlEQ.update('none');
+  }
 
   // THD 图
   if (!chartTHD) {
