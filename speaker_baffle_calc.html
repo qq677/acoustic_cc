@@ -994,12 +994,12 @@ async function calcNonlinear() {
   const XmaxSI = xmax / 1000;  // mm → m
   for (let i = 0; i < nPts; i++) {
     const w = 2 * Math.PI * nlFreqs[i];
-    // 线性 V_to_Xmax
+    // 线性 V_to_Xmax（X_per_V 用峰值位移，Xmax 也是峰值，单位一致）
     const ZmLin = new Complex(pSI.Rms, w * pSI.Mms - 1 / (w * pSI.Cms));
     const ZinLin = new Complex(pSI.Re, w * pSI.Le).add(new Complex(pSI.Bl * pSI.Bl, 0).div(ZmLin));
-    const I_lin = new Complex(1, 0).div(ZinLin);  // 1V激励
-    const X_per_V_lin = I_lin.mul(pSI.Bl).div(ZmLin).abs() / w;  // 峰值 m/V
-    eqVLin[i] = Math.min((X_per_V_lin > 1e-15 ? XmaxSI / X_per_V_lin : 1e9), vmax);
+    const X_per_V_lin_peak = new Complex(1, 0).div(ZinLin).mul(pSI.Bl).div(ZmLin).abs() / w * Math.SQRT2;
+    eqVLin[i] = Math.min((X_per_V_lin_peak > 1e-15 ? XmaxSI / X_per_V_lin_peak : 1e9), vmax);
+    const X_per_V_lin = X_per_V_lin_peak; // 保持后续迭代使用峰值
 
     // 非线性 V_to_Xmax：迭代反解描述函数
     let Vg = eqVLin[i];  // 初始猜测 = 线性解
