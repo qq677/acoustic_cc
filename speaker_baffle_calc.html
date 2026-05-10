@@ -626,10 +626,10 @@ function rk4Solve(blSpline, cmsSpline, pSI, freq, Vpeak, distance) {
 
   const period = 1 / freq;
   const tau = pSI.Mms / pSI.Rms;
-  const tSettle = Math.max(5 * tau, 3 * period);
-  const nSettle = Math.max(50, Math.ceil(tSettle * freq));
-  const nMeasure = 4;
-  const stepsPerCycle = 200;
+  // 自适应 settling：10τ 绝对时间 + 至少 5 个周期让系统建立稳态
+  const nSettle = Math.max(5, Math.ceil(10 * tau * freq));
+  const nMeasure = 2;  // 2个周期足够 FFT 提取 H1-H5
+  const stepsPerCycle = 256;  // 256步/周期 → 准确的谐波提取
   const dt = period / stepsPerCycle;
   const nSettleSteps = nSettle * stepsPerCycle;
   const nMeasureSteps = nMeasure * stepsPerCycle;
@@ -974,11 +974,16 @@ async function calcNonlinear() {
   statusEl.textContent = '计算中...';
   document.getElementById('nlCharts').style.display = 'flex';
 
-  // 用自定义频点范围
-  const nPts = mode === 'timedomain' ? Math.min(250, parseInt(document.getElementById('fPoints').value) || 250) : Math.min(200, parseInt(document.getElementById('fPoints').value) || 200);
-  const fEnd = parseFloat(document.getElementById('fEnd').value) || 20000;
-  const fMin = 20; // 时域和快速模式均从20Hz起始
-  const fMax = Math.max(20, fEnd);
+  // 频点范围：快速模式全频段，时域模式聚焦20-1000Hz（THD主要关注区）
+  const fMin = 20;
+  let nPts, fMax;
+  if (mode === 'timedomain') {
+    fMax = 1000;  // 时域仅算到1kHz，低频THD是关注重点
+    nPts = Math.min(150, parseInt(document.getElementById('fPoints').value) || 150);
+  } else {
+    fMax = Math.max(20, parseFloat(document.getElementById('fEnd').value) || 20000);
+    nPts = Math.min(200, parseInt(document.getElementById('fPoints').value) || 200);
+  }
   const nlFreqs = new Float64Array(nPts);
   for (let i = 0; i < nPts; i++) {
     nlFreqs[i] = fMin * Math.pow(fMax / fMin, i / (nPts - 1));
@@ -991,7 +996,7 @@ async function calcNonlinear() {
     statusEl.textContent = '完成（快速谐波平衡）';
   } else {
     // 时域模式：逐步计算，显示进度
-    statusEl.textContent = `时域求解中（${nPts}频点 20Hz-${fMax.toFixed(0)}Hz，较慢）... 0%`;
+    statusEl.textContent = `时域求解中（${nPts}频点 ${fMin}Hz-${fMax}Hz，约需数十秒）... 0%`;
     await new Promise(r => setTimeout(r, 50));
 
     const spl = new Float64Array(nPts);
