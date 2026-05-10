@@ -149,17 +149,17 @@ body {
   <div class="left-panel">
     <div class="section-title">TS 参数输入</div>
     <div class="param-grid">
-      <div class="param-row"><label>Re (Ω)</label><input id="re" type="number" value="7.5" step="any"></div>
-      <div class="param-row"><label>Le (mH)</label><input id="le" type="number" value="0.04" step="any"></div>
-      <div class="param-row"><label>Bl (T·m)</label><input id="bl" type="number" value="1.1" step="any"></div>
-      <div class="param-row"><label>Cms (mm/N)</label><input id="cms" type="number" value="0.40" step="any"></div>
-      <div class="param-row"><label>Mms (mg)</label><input id="mms" type="number" value="55" step="any"></div>
-      <div class="param-row"><label>Rms (N·s/m)</label><input id="rms" type="number" value="0.07" step="any"></div>
-      <div class="param-row"><label>Sd (mm²)</label><input id="sd" type="number" value="85" step="any"></div>
-      <div class="param-row"><label>Xmax (mm)</label><input id="xmax" type="number" value="0.30" step="any"></div>
-      <div class="param-row"><label>Vrms (V)</label><input id="vrms" type="number" value="1.0" step="any"></div>
+      <div class="param-row"><label>Re (Ω)</label><input id="re" type="number" value="6.8" step="any"></div>
+      <div class="param-row"><label>Le (mH)</label><input id="le" type="number" value="0" step="any"></div>
+      <div class="param-row"><label>Bl (T·m)</label><input id="bl" type="number" value="0.55" step="any"></div>
+      <div class="param-row"><label>Cms (mm/N)</label><input id="cms" type="number" value="6.3" step="any"></div>
+      <div class="param-row"><label>Mms (mg)</label><input id="mms" type="number" value="70" step="any"></div>
+      <div class="param-row"><label>Rms (N·s/m)</label><input id="rms" type="number" value="0.06" step="any"></div>
+      <div class="param-row"><label>Sd (mm²)</label><input id="sd" type="number" value="116" step="any"></div>
+      <div class="param-row"><label>Xmax (mm)</label><input id="xmax" type="number" value="0.65" step="any"></div>
+      <div class="param-row"><label>Vrms (V)</label><input id="vrms" type="number" value="0.4" step="any"></div>
       <div class="param-row"><label>Vmax (V)</label><input id="vmax" type="number" value="2.2" step="any" title="最大输出电压，用于计算最大能力频响"></div>
-      <div class="param-row"><label>距离 (m)</label><input id="distance" type="number" value="0.1" step="any"></div>
+      <div class="param-row"><label>距离 (m)</label><input id="distance" type="number" value="0.03" step="any"></div>
     </div>
 
     <div class="section-title" style="margin-top:4px;">频率范围</div>
@@ -171,6 +171,7 @@ body {
 
     <div class="presets">
       <span style="font-size:0.7em;color:var(--text)">预置:</span>
+      <button class="btn btn-outline btn-sm" onclick="loadPreset('2110')">2110水滴</button>
       <button class="btn btn-outline btn-sm" onclick="loadPreset('1511')">1511型</button>
       <button class="btn btn-outline btn-sm" onclick="loadPreset('1813')">1813型</button>
       <button class="btn btn-outline btn-sm" onclick="loadPreset('custom')">自定义</button>
@@ -1096,6 +1097,7 @@ function exportPNG(chartId) {
 // 预置参数
 function loadPreset(type) {
   const presets = {
+    '2110': { re:6.8, le:0, bl:0.55, cms:6.3, mms:70, rms:0.06, sd:116, xmax:0.65 },
     '1511': { re:7.5, le:0.04, bl:1.10, cms:0.40, mms:55, rms:0.07, sd:85, xmax:0.30 },
     '1813': { re:4.0, le:0.02, bl:0.70, cms:0.55, mms:42, rms:0.05, sd:125, xmax:0.35 },
     'custom': { re:8.0, le:0.06, bl:0.90, cms:0.35, mms:65, rms:0.06, sd:95, xmax:0.40 },
