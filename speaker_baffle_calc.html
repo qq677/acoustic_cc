@@ -330,7 +330,7 @@ function calcLinearResponse(p, vrms, distance, freqs) {
     const pSound = new Complex(0, w * RHO_AIR * pSI.Sd).mul(v).div(new Complex(2 * Math.PI * distance, 0));
 
     spl[i] = 20 * Math.log10(pSound.abs() / P_REF);
-    disp[i] = v.abs() / w * 1000; // mm
+    disp[i] = v.abs() / w * 1000 * Math.SQRT2; // mm (峰值)
     imp[i] = Zin.abs();
   }
   return { spl, disp, imp };
@@ -544,8 +544,8 @@ function describingFunction(blSpline, cmsSpline, pSI, freqs, vrms, distance) {
     const I_f = new Complex(Vpeak, 0).div(new Complex(pSI.Re, w * pSI.Le).add(new Complex(BlEq * BlEq, 0).div(ZmF)));
     const v_f = I_f.mul(BlEq).div(ZmF);
     const pSound = new Complex(0, w * RHO_AIR * pSI.Sd).mul(v_f).div(new Complex(2 * Math.PI * distance, 0));
-    splNl[i] = 20 * Math.log10(pSound.abs() / P_REF);
-    dispNl[i] = v_f.abs() / w * 1000;
+    splNl[i] = 20 * Math.log10(pSound.abs() / (Math.SQRT2 * P_REF));
+    dispNl[i] = v_f.abs() / w * 1000; // 峰值位移 (Vpeak输入→峰值速度)
 
     // THD 估算：计算 Bl(x(t)) 和 k(x(t)) 的谐波分量
     const Xmm = Xamp * 1000; // 位移 (mm)
@@ -641,10 +641,10 @@ function rk4Solve(blSpline, cmsSpline, pSI, freq, Vpeak, distance) {
   // 提取谐波
   const h = extractHarmonics(xWave, tWave, w);
 
-  const vFund = h.v1;
+  const vFund = h.v1; // 峰值速度 (Vpeak激励→峰值响应)
   const pFund = w * RHO_AIR * pSI.Sd * vFund / (2 * Math.PI * distance);
-  const spl = 20 * Math.log10(Math.max(pFund, 1e-12) / P_REF);
-  const dispFund = vFund / w * 1000;
+  const spl = 20 * Math.log10(Math.max(pFund, 1e-12) / (Math.SQRT2 * P_REF));
+  const dispFund = vFund / w * 1000; // 峰值位移 (mm)
 
   return { spl, disp: dispFund, thdTotal: h.thd, thd2: h.thd2, thd3: h.thd3, h1: h.h1, h2: h.h2, h3: h.h3 };
 }
