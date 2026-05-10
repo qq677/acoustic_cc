@@ -555,36 +555,65 @@ function describingFunction(blSpline, cmsSpline, pSI, freqs, vrms, distance) {
     splNl[i] = 20 * Math.log10(pSound.abs() / (Math.SQRT2 * P_REF));
     dispNl[i] = v_f.abs() / w * 1000; // 峰值位移 (Vpeak输入→峰值速度)
 
-    // THD 估算：计算 Bl(x(t)) 和 k(x(t)) 的谐波分量
-    const Xmm = Xamp * 1000; // 位移 (mm)
-    const blHarm = new Float64Array(nQuad);
-    const kHarm = new Float64Array(nQuad);
-    for (let j = 0; j < nQuad; j++) {
-      const xj = Xmm * sinTh[j];
-      blHarm[j] = blSpline.eval(xj);
-      const cmsVal = cmsSpline.eval(xj);
-      kHarm[j] = 1 / (cmsVal / 1000);
+    // === 扰动法 THD 计算 ===
+    // 1. 用收敛后的 BlEq/kEq 计算基波电流相位，以便合成时域波形
+    const phiI = I_f.arg();
+    const phiV = v_f.arg();
+    // x₁(t) = Xamp·sin(ωt+φ_v),  i₁(t) = |I_f|·cos(ωt+φ_I)
+    const I1mag = I_f.abs();
+    const Xmm = Xamp * 1000;
+
+    // 2. 在一个周期内采样 256 点，计算非线性力 F(t) = Bl(x)·i - k(x)·x
+    const nFFT = 256;
+    const fWave = new Float64Array(nFFT);
+    for (let j = 0; j < nFFT; j++) {
+      const wt = 2 * Math.PI * j / nFFT;
+      const xj = Xamp * Math.sin(wt + phiV);           // 位移 (m)
+      const xjmm = xj * 1000;                          // 位移 (mm)
+      const ij = I1mag * Math.cos(wt + phiI);          // 电流 (A)
+      const blVal = blSpline.eval(xjmm);               // Bl(x) (T·m)
+      const cmsVal = cmsSpline.eval(xjmm);             // Cms(x) (mm/N)
+      const kVal = 1 / (cmsVal / 1000);                // k(x) (N/m)
+      fWave[j] = blVal * ij - kVal * xj;               // 总驱动力 (N)
     }
-    // DFT 提取谐波
-    const blDC = blHarm.reduce((a, b) => a + b, 0) / nQuad;
-    let bl1cos = 0, bl1sin = 0, bl2cos = 0, bl2sin = 0, bl3cos = 0, bl3sin = 0;
-    for (let j = 0; j < nQuad; j++) {
-      const v = blHarm[j] - blDC;
-      bl1cos += v * cosTh[j];
-      bl1sin += v * sinTh[j];
-      bl2cos += v * Math.cos(2 * theta[j]);
-      bl2sin += v * Math.sin(2 * theta[j]);
-      bl3cos += v * Math.cos(3 * theta[j]);
-      bl3sin += v * Math.sin(3 * theta[j]);
+
+    // 3. DFT 提取力谐波 F₁~F₅（正确系数: 2/N）
+    let f1c=0,f1s=0,f2c=0,f2s=0,f3c=0,f3s=0,f4c=0,f4s=0,f5c=0,f5s=0;
+    for (let j = 0; j < nFFT; j++) {
+      const fv = fWave[j];
+      const wt = 2 * Math.PI * j / nFFT;
+      f1c += fv * Math.cos(wt);   f1s += fv * Math.sin(wt);
+      f2c += fv * Math.cos(2*wt); f2s += fv * Math.sin(2*wt);
+      f3c += fv * Math.cos(3*wt); f3s += fv * Math.sin(3*wt);
+      f4c += fv * Math.cos(4*wt); f4s += fv * Math.sin(4*wt);
+      f5c += fv * Math.cos(5*wt); f5s += fv * Math.sin(5*wt);
     }
-    const H1 = Math.sqrt(bl1cos*bl1cos + bl1sin*bl1sin) / nQuad;
-    const H2 = Math.sqrt(bl2cos*bl2cos + bl2sin*bl2sin) / nQuad;
-    const H3 = Math.sqrt(bl3cos*bl3cos + bl3sin*bl3sin) / nQuad;
-    // THD 用 H2, H3 代用估算
-    const thdVal = Math.sqrt(H2*H2 + H3*H3) / Math.max(H1, 1e-12) * 100;
+    const nrm = 2 / nFFT;
+    const F1 = Math.sqrt(f1c*f1c + f1s*f1s) * nrm;
+    const F2 = Math.sqrt(f2c*f2c + f2s*f2s) * nrm;
+    const F3 = Math.sqrt(f3c*f3c + f3s*f3s) * nrm;
+    const F4 = Math.sqrt(f4c*f4c + f4s*f4s) * nrm;
+    const F5 = Math.sqrt(f5c*f5c + f5s*f5s) * nrm;
+
+    // 4. 谐波力 → 谐波位移: X_n = F_n / (nω·|Zm(nω)|)
+    const CmsEqSI = 1 / kEq;  // 等效顺性 (m/N)
+    const X1_from_F = F1 / (w * Math.sqrt(pSI.Rms*pSI.Rms + Math.pow(w*pSI.Mms - kEq/w, 2)));
+    // 用计算的 X₁ 做基准（更准确）
+    const X1_ref = Math.max(X1_from_F, Xamp);
+    const getXharm = (Fn, n) => {
+      if (Fn < 1e-15) return 0;
+      const nw = n * w;
+      const ZmN = Math.sqrt(pSI.Rms*pSI.Rms + Math.pow(nw*pSI.Mms - kEq/nw, 2));
+      return Fn / (nw * ZmN);
+    };
+    const X2 = getXharm(F2, 2);
+    const X3 = getXharm(F3, 3);
+    const X4 = getXharm(F4, 4);
+    const X5 = getXharm(F5, 5);
+    const thdVal = Math.sqrt(X2*X2 + X3*X3 + X4*X4 + X5*X5) / Math.max(X1_ref, 1e-12) * 100;
     thdTotal[i] = thdVal;
-    thd2[i] = H2 / Math.max(H1, 1e-12) * 100;
-    thd3[i] = H3 / Math.max(H1, 1e-12) * 100;
+    thd2[i] = X2 / Math.max(X1_ref, 1e-12) * 100;
+    thd3[i] = X3 / Math.max(X1_ref, 1e-12) * 100;
   }
   return { spl: splNl, disp: dispNl, thdTotal, thd2, thd3 };
 }
@@ -935,11 +964,10 @@ async function calcNonlinear() {
   document.getElementById('nlCharts').style.display = 'flex';
 
   // 用自定义频点范围
-  const nPts = mode === 'timedomain' ? Math.min(150, parseInt(document.getElementById('fPoints').value) || 150) : Math.min(200, parseInt(document.getElementById('fPoints').value) || 200);
-  const fStart = parseFloat(document.getElementById('fStart').value) || 20;
+  const nPts = mode === 'timedomain' ? Math.min(200, parseInt(document.getElementById('fPoints').value) || 200) : Math.min(200, parseInt(document.getElementById('fPoints').value) || 200);
   const fEnd = parseFloat(document.getElementById('fEnd').value) || 20000;
-  const fMin = Math.max(1, Math.min(fStart, fEnd));
-  const fMax = Math.max(1, Math.max(fStart, fEnd));
+  const fMin = 20; // 时域和快速模式均从20Hz起始
+  const fMax = Math.max(20, fEnd);
   const nlFreqs = new Float64Array(nPts);
   for (let i = 0; i < nPts; i++) {
     nlFreqs[i] = fMin * Math.pow(fMax / fMin, i / (nPts - 1));
