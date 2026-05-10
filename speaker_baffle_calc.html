@@ -213,19 +213,19 @@ body {
   <div class="nonlinear-body" id="nlBody">
     <div class="nl-section">
       <h4>Bl(x) 数据表</h4>
-      <textarea id="blData" placeholder="格式：x(mm) Bl(T·m)&#10;-0.50  0.52&#10;-0.25  0.58&#10; 0.00  0.60&#10; 0.25  0.57&#10; 0.50  0.50">-0.50  0.52
--0.25  0.58
- 0.00  0.60
- 0.25  0.57
- 0.50  0.50</textarea>
+      <textarea id="blData" placeholder="格式：x(mm) Bl(T·m)&#10;-0.50  0.45&#10;-0.25  0.50&#10; 0.00  0.55&#10; 0.25  0.50&#10; 0.50  0.45">-0.50  0.45
+-0.25  0.50
+ 0.00  0.55
+ 0.25  0.50
+ 0.50  0.45</textarea>
     </div>
     <div class="nl-section">
       <h4>Cms(x) 数据表</h4>
-      <textarea id="cmsData" placeholder="格式：x(mm) Cms(mm/N)&#10;-0.50  0.85&#10;-0.25  0.72&#10; 0.00  0.65&#10; 0.25  0.70&#10; 0.50  0.88">-0.50  0.85
--0.25  0.72
- 0.00  0.65
- 0.25  0.70
- 0.50  0.88</textarea>
+      <textarea id="cmsData" placeholder="格式：x(mm) Cms(mm/N)&#10;-0.50  5&#10;-0.25  5.5&#10; 0.00  6.3&#10; 0.25  5.5&#10; 0.50  5">-0.50  5
+-0.25  5.5
+ 0.00  6.3
+ 0.25  5.5
+ 0.50  5</textarea>
     </div>
     <div style="width:100%;">
       <div class="nl-controls">
@@ -242,8 +242,14 @@ body {
         <button class="btn btn-primary btn-sm" onclick="calcNonlinear()">计算非线性响应</button>
       </div>
       <div class="nl-status" id="nlStatus"></div>
+      <div style="font-size:0.72em;color:var(--text);line-height:1.5;margin-top:4px;background:var(--input-bg);padding:6px 10px;border-radius:4px;">
+        ⚡ <b>快速谐波平衡</b>：用描述函数法等效线性化，数值积分提取Bl(x)谐波估算THD，<b>秒级完成</b>，适合快速扫参。<br>
+        🔬 <b>精细时域求解</b>：RK4数值积分非线性ODE，稳态后FFT提取H1-H5，<b>精度高但较慢</b>，适合最终验证。
+      </div>
     </div>
     <div class="nl-charts" id="nlCharts" style="display:none;">
+      <div class="nl-chart-wrap"><canvas id="chartBlFit"></canvas></div>
+      <div class="nl-chart-wrap"><canvas id="chartCmsFit"></canvas></div>
       <div class="nl-chart-wrap"><canvas id="chartNlSPL"></canvas></div>
       <div class="nl-chart-wrap"><canvas id="chartNlDisp"></canvas></div>
       <div class="nl-chart-wrap" style="min-width:680px;"><canvas id="chartTHD"></canvas></div>
@@ -920,12 +926,16 @@ async function calcNonlinear() {
     alert('插值器构建失败: ' + e.message); return;
   }
 
+  // 绘制 Bl(x) / Cms(x) 拟合曲线
+  drawFittingChart('chartBlFit', blSpline, blParsed, 'Bl(x) 拟合', 'Bl (T·m)', '#e06c75');
+  drawFittingChart('chartCmsFit', cmsSpline, cmsParsed, 'Cms(x) 拟合', 'Cms (mm/N)', '#61afef');
+
   const statusEl = document.getElementById('nlStatus');
   statusEl.textContent = '计算中...';
-  document.getElementById('nlCharts').style.display = 'none';
+  document.getElementById('nlCharts').style.display = 'flex';
 
   // 用自定义频点范围
-  const nPts = mode === 'timedomain' ? Math.min(80, parseInt(document.getElementById('fPoints').value) || 80) : Math.min(200, parseInt(document.getElementById('fPoints').value) || 200);
+  const nPts = mode === 'timedomain' ? Math.min(150, parseInt(document.getElementById('fPoints').value) || 150) : Math.min(200, parseInt(document.getElementById('fPoints').value) || 200);
   const fStart = parseFloat(document.getElementById('fStart').value) || 20;
   const fEnd = parseFloat(document.getElementById('fEnd').value) || 20000;
   const fMin = Math.max(1, Math.min(fStart, fEnd));
@@ -1088,6 +1098,68 @@ function showNonlinearResults(nlResult, nlFreqs) {
   chartTHD.data.datasets[2].data = Array.from(nlResult.thd3);
   updateX(chartTHD);
   chartTHD.update('none');
+}
+
+// 绘制 Bl(x)/Cms(x) 拟合曲线（含原始数据散点）
+function drawFittingChart(canvasId, spline, rawData, title, yLabel, color) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  // 生成拟合曲线的密集采样点
+  const xMin = rawData.x[0], xMax = rawData.x[rawData.x.length - 1];
+  const nFit = 200;
+  const fitX = [], fitY = [];
+  for (let i = 0; i <= nFit; i++) {
+    const x = xMin + (xMax - xMin) * i / nFit;
+    fitX.push(x);
+    fitY.push(spline.eval(x));
+  }
+  // 销毁旧图表
+  const existing = Chart.getChart(canvasId);
+  if (existing) existing.destroy();
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: fitX,
+      datasets: [
+        {
+          label: title + ' (样条)',
+          data: fitY,
+          borderColor: color,
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.1
+        },
+        {
+          label: title + ' (原始数据)',
+          data: rawData.y.map((v, i) => ({ x: rawData.x[i], y: v })),
+          borderColor: color,
+          backgroundColor: color,
+          borderWidth: 0,
+          pointRadius: 4,
+          pointStyle: 'circle',
+          showLine: false
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: {
+          type: 'linear',
+          title: { display: true, text: '位移 (mm)', color: '#abb2bf' },
+          ticks: { color: '#666' },
+          grid: { color: '#2c313a' }
+        },
+        y: {
+          title: { display: true, text: yLabel, color: '#abb2bf' },
+          ticks: { color: '#666' },
+          grid: { color: '#2c313a' }
+        }
+      },
+      plugins: {
+        legend: { labels: { color: '#abb2bf', font: { size: 10 } } }
+      }
+    }
+  });
 }
 
 // ========== 导出功能 ==========
