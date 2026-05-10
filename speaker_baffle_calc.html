@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>微型扬声器障板频响计算器</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js">
+</script>
+<style>
+:root {
+  --bg: #1a1d23;
+  --panel: #21252b;
+  --border: #333842;
+  --text: #abb2bf;
+  --text-bright: #dcdfe4;
+  --accent: #61afef;
+  --accent2: #e06c75;
+  --accent3: #98c379;
+  --input-bg: #282c34;
+  --input-border: #3e4452;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  background: var(--bg); color: var(--text);
+  min-height: 100vh; overflow-x: hidden;
+}
+.header {
+  background: var(--panel); border-bottom: 1px solid var(--border);
+  padding: 10px 24px; display: flex; align-items: center; gap: 12px;
+}
+.header h1 { font-size: 1.2em; color: var(--text-bright); font-weight: 600; }
+.header .badge { font-size: 0.7em; background: var(--accent); color: #000; padding: 2px 8px; border-radius: 10px; }
+
+.main-layout {
+  display: flex; height: calc(100vh - 50px);
+}
+.left-panel {
+  width: 340px; min-width: 340px; background: var(--panel);
+  border-right: 1px solid var(--border); padding: 16px;
+  overflow-y: auto; display: flex; flex-direction: column; gap: 14px;
+}
+.right-panel {
+  flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding: 12px;
+}
+
+.section-title {
+  font-size: 0.85em; color: var(--accent); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px;
+}
+.param-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+.param-row {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.param-row label {
+  font-size: 0.75em; color: var(--text); white-space: nowrap;
+}
+.param-row input {
+  background: var(--input-bg); border: 1px solid var(--input-border);
+  color: var(--text-bright); padding: 5px 8px; border-radius: 4px;
+  font-size: 0.85em; width: 100%; outline: none;
+}
+.param-row input:focus { border-color: var(--accent); }
+
+.btn {
+  padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;
+  font-size: 0.85em; font-weight: 600; transition: all 0.2s;
+}
+.btn-primary { background: var(--accent); color: #000; width: 100%; }
+.btn-primary:hover { opacity: 0.85; }
+.btn-sm { padding: 4px 10px; font-size: 0.75em; }
+.btn-outline {
+  background: transparent; border: 1px solid var(--accent); color: var(--accent);
+}
+.btn-outline:hover { background: var(--accent); color: #000; }
+
+.derived-params {
+  background: var(--input-bg); border-radius: 6px; padding: 10px 12px;
+  font-size: 0.78em; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px;
+}
+.derived-params span { color: var(--accent3); font-weight: 600; }
+
+.chart-container {
+  flex: 1; position: relative; min-height: 250px; margin-bottom: 8px;
+}
+.chart-container canvas { width: 100% !important; height: 100% !important; }
+
+/* 非线性折叠面板 */
+.nonlinear-panel {
+  border-top: 1px solid var(--border); background: var(--panel);
+}
+.nonlinear-toggle {
+  display: flex; align-items: center; gap: 8px; padding: 12px 24px;
+  cursor: pointer; user-select: none; font-size: 0.9em; color: var(--text-bright);
+  font-weight: 600;
+}
+.nonlinear-toggle:hover { background: rgba(255,255,255,0.02); }
+.nonlinear-toggle .arrow { transition: transform 0.3s; font-size: 0.7em; }
+.nonlinear-toggle.open .arrow { transform: rotate(90deg); }
+.nonlinear-body {
+  display: none; padding: 0 24px 16px; gap: 16px;
+}
+.nonlinear-body.show { display: flex; flex-wrap: wrap; }
+
+.nl-section { flex: 1; min-width: 300px; }
+.nl-section h4 { font-size: 0.8em; color: var(--accent2); margin-bottom: 6px; }
+.nl-section textarea {
+  width: 100%; height: 140px; background: var(--input-bg); color: var(--text-bright);
+  border: 1px solid var(--input-border); border-radius: 4px; padding: 8px;
+  font-family: 'Consolas', 'Courier New', monospace; font-size: 0.8em; resize: vertical;
+}
+.nl-controls {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px;
+}
+.nl-controls label { font-size: 0.78em; color: var(--text); }
+.nl-controls select {
+  background: var(--input-bg); color: var(--text-bright); border: 1px solid var(--input-border);
+  border-radius: 4px; padding: 4px 8px; font-size: 0.8em;
+}
+.nl-status { font-size: 0.78em; color: var(--accent3); margin-top: 4px; }
+.nl-charts { width: 100%; display: flex; gap: 12px; flex-wrap: wrap; }
+.nl-chart-wrap { flex: 1; min-width: 340px; height: 300px; position: relative; }
+
+.presets { display: flex; gap: 4px; flex-wrap: wrap; }
+.presets button { font-size: 0.7em; padding: 3px 8px; }
+
+/* scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+@media (max-width: 900px) {
+  .main-layout { flex-direction: column; }
+  .left-panel { width: 100%; min-width: unset; max-height: 50vh; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>微型扬声器障板频响计算器</h1>
+  <span class="badge">Infinite Baffle</span>
+</div>
+
+<div class="main-layout">
+  <!-- 左侧输入面板 -->
+  <div class="left-panel">
+    <div class="section-title">TS 参数输入</div>
+    <div class="param-grid">
+      <div class="param-row"><label>Re (Ω)</label><input id="re" type="number" value="7.5" step="any"></div>
+      <div class="param-row"><label>Le (mH)</label><input id="le" type="number" value="0.04" step="any"></div>
+      <div class="param-row"><label>Bl (T·m)</label><input id="bl" type="number" value="1.1" step="any"></div>
+      <div class="param-row"><label>Cms (mm/N)</label><input id="cms" type="number" value="0.40" step="any"></div>
+      <div class="param-row"><label>Mms (mg)</label><input id="mms" type="number" value="55" step="any"></div>
+      <div class="param-row"><label>Rms (N·s/m)</label><input id="rms" type="number" value="0.07" step="any"></div>
+      <div class="param-row"><label>Sd (mm²)</label><input id="sd" type="number" value="85" step="any"></div>
+      <div class="param-row"><label>Xmax (mm)</label><input id="xmax" type="number" value="0.30" step="any"></div>
+      <div class="param-row"><label>Vrms (V)</label><input id="vrms" type="number" value="1.0" step="any"></div>
+      <div class="param-row"><label>距离 (m)</label><input id="distance" type="number" value="0.1" step="any"></div>
+    </div>
+
+    <div class="section-title" style="margin-top:4px;">频率范围</div>
+    <div class="param-grid" style="grid-template-columns: 1fr 1fr 1fr;">
+      <div class="param-row"><label>起始 (Hz)</label><input id="fStart" type="number" value="20" step="any"></div>
+      <div class="param-row"><label>截止 (Hz)</label><input id="fEnd" type="number" value="20000" step="any"></div>
+      <div class="param-row"><label>频点数</label><input id="fPoints" type="number" value="500" step="1"></div>
+    </div>
+
+    <div class="presets">
+      <span style="font-size:0.7em;color:var(--text)">预置:</span>
+      <button class="btn btn-outline btn-sm" onclick="loadPreset('1511')">1511型</button>
+      <button class="btn btn-outline btn-sm" onclick="loadPreset('1813')">1813型</button>
+      <button class="btn btn-outline btn-sm" onclick="loadPreset('custom')">自定义</button>
+    </div>
+
+    <button class="btn btn-primary" onclick="calcAll()">▶ 计算线性响应</button>
+
+    <div style="display:flex;gap:6px;margin-top:-6px;">
+      <button class="btn btn-outline btn-sm" onclick="exportCSV()" style="flex:1;">📥 导出 CSV</button>
+      <button class="btn btn-outline btn-sm" onclick="exportPNG('chartSPL')" style="flex:1;">🖼 SPL图PNG</button>
+      <button class="btn btn-outline btn-sm" onclick="exportPNG('chartDisp')" style="flex:1;">🖼 位移图PNG</button>
+    </div>
+
+    <div class="derived-params" id="derivedParams" style="display:none;">
+      <div>Fs <span id="dp_fs">--</span> Hz</div>
+      <div>Qts <span id="dp_qts">--</span></div>
+      <div>Qes <span id="dp_qes">--</span></div>
+      <div>Qms <span id="dp_qms">--</span></div>
+      <div>Vas <span id="dp_vas">--</span> cm³</div>
+      <div>SPL₀ <span id="dp_spl0">--</span> dB</div>
+    </div>
+
+    <div id="linearStatus" style="font-size:0.75em;color:var(--accent3)"></div>
+  </div>
+
+  <!-- 右侧图表区 -->
+  <div class="right-panel" id="rightPanel">
+    <div class="chart-container"><canvas id="chartSPL"></canvas></div>
+    <div class="chart-container"><canvas id="chartDisp"></canvas></div>
+  </div>
+</div>
+
+<!-- 非线性折叠面板 -->
+<div class="nonlinear-panel">
+  <div class="nonlinear-toggle" id="nlToggle" onclick="toggleNonlinear()">
+    <span class="arrow">▶</span> 非线性失真分析（展开输入 Bl(x) 和 Cms(x) 数据）
+  </div>
+  <div class="nonlinear-body" id="nlBody">
+    <div class="nl-section">
+      <h4>Bl(x) 数据表</h4>
+      <textarea id="blData" placeholder="格式：x(mm) Bl(T·m)&#10;-0.50  0.52&#10;-0.25  0.58&#10; 0.00  0.60&#10; 0.25  0.57&#10; 0.50  0.50">-0.50  0.52
+-0.25  0.58
+ 0.00  0.60
+ 0.25  0.57
+ 0.50  0.50</textarea>
+    </div>
+    <div class="nl-section">
+      <h4>Cms(x) 数据表</h4>
+      <textarea id="cmsData" placeholder="格式：x(mm) Cms(mm/N)&#10;-0.50  0.85&#10;-0.25  0.72&#10; 0.00  0.65&#10; 0.25  0.70&#10; 0.50  0.88">-0.50  0.85
+-0.25  0.72
+ 0.00  0.65
+ 0.25  0.70
+ 0.50  0.88</textarea>
+    </div>
+    <div style="width:100%;">
+      <div class="nl-controls">
+        <label>插值方法:</label>
+        <select id="nlInterp">
+          <option value="akima">Akima 样条</option>
+          <option value="steffen">Steffen 样条</option>
+        </select>
+        <label>计算模式:</label>
+        <select id="nlMode">
+          <option value="harmonic">快速谐波平衡</option>
+          <option value="timedomain">精细时域求解</option>
+        </select>
+        <button class="btn btn-primary btn-sm" onclick="calcNonlinear()">计算非线性响应</button>
+      </div>
+      <div class="nl-status" id="nlStatus"></div>
+    </div>
+    <div class="nl-charts" id="nlCharts" style="display:none;">
+      <div class="nl-chart-wrap"><canvas id="chartNlSPL"></canvas></div>
+      <div class="nl-chart-wrap"><canvas id="chartNlDisp"></canvas></div>
+      <div class="nl-chart-wrap" style="min-width:680px;"><canvas id="chartTHD"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ========== 常量与工具 ==========
+const C_SOUND = 344;
+const RHO_AIR = 1.21;
+const P_REF = 2e-5;
+
+class Complex {
+  constructor(re, im) { this.re = re; this.im = im; }
+  add(z) { return new Complex(this.re + z.re, this.im + z.im); }
+  sub(z) { return new Complex(this.re - z.re, this.im - z.im); }
+  mul(z) {
+    if (typeof z === 'number') return new Complex(this.re * z, this.im * z);
+    return new Complex(this.re * z.re - this.im * z.im, this.re * z.im + this.im * z.re);
+  }
+  div(z) {
+    if (typeof z === 'number') return new Complex(this.re / z, this.im / z);
+    const d = z.re * z.re + z.im * z.im;
+    return new Complex((this.re * z.re + this.im * z.im) / d, (this.im * z.re - this.re * z.im) / d);
+  }
+  abs() { return Math.sqrt(this.re * this.re + this.im * this.im); }
+  arg() { return Math.atan2(this.im, this.re); }
+  static exp(jtheta) { return new Complex(Math.cos(jtheta), Math.sin(jtheta)); }
+}
+
+function getParams() {
+  return {
+    Re: parseFloat(document.getElementById('re').value) || 8,
+    Le: parseFloat(document.getElementById('le').value) || 0.05,
+    Bl: parseFloat(document.getElementById('bl').value) || 0.6,
+    Cms: parseFloat(document.getElementById('cms').value) || 0.5,
+    Mms: parseFloat(document.getElementById('mms').value) || 80,
+    Rms: parseFloat(document.getElementById('rms').value) || 0.05,
+    Sd: parseFloat(document.getElementById('sd').value) || 90,
+    Xmax: parseFloat(document.getElementById('xmax').value) || 0.35,
+  };
+}
+
+function toSI(p) {
+  return {
+    Re: p.Re,
+    Le: p.Le / 1000,
+    Bl: p.Bl,
+    Cms: p.Cms / 1000,
+    Mms: p.Mms / 1_000_000,
+    Rms: p.Rms,
+    Sd: p.Sd / 1_000_000,
+    Xmax: p.Xmax / 1000,
+  };
+}
+
+// ========== 线性频响计算 ==========
+function calcDerived(pSI) {
+  const Fs = 1 / (2 * Math.PI * Math.sqrt(pSI.Cms * pSI.Mms));
+  const Qes = 2 * Math.PI * Fs * pSI.Mms * pSI.Re / (pSI.Bl * pSI.Bl);
+  const Qms = 2 * Math.PI * Fs * pSI.Mms / pSI.Rms;
+  const Qts = Qes * Qms / (Qes + Qms);
+  const Vas = RHO_AIR * C_SOUND * C_SOUND * pSI.Cms * pSI.Sd * pSI.Sd;
+  const eta0 = RHO_AIR * pSI.Bl * pSI.Bl * pSI.Sd * pSI.Sd / (2 * Math.PI * C_SOUND * pSI.Mms * pSI.Mms * pSI.Re);
+  const SPL0 = 112.2 + 10 * Math.log10(Math.max(eta0, 1e-12));
+  return { Fs, Qes, Qms, Qts, Vas, eta0, SPL0 };
+}
+
+function calcLinearResponse(p, vrms, distance, freqs) {
+  const pSI = toSI(p);
+  const N = freqs.length;
+  const spl = new Float64Array(N);
+  const disp = new Float64Array(N);
+  const imp = new Float64Array(N);
+
+  for (let i = 0; i < N; i++) {
+    const w = 2 * Math.PI * freqs[i];
+    const Ze = new Complex(pSI.Re, w * pSI.Le);
+    const Zm = new Complex(pSI.Rms, w * pSI.Mms - 1 / (w * pSI.Cms));
+    const Zmot = new Complex(pSI.Bl * pSI.Bl, 0).div(Zm);
+    const Zin = Ze.add(Zmot);
+    const I = new Complex(vrms, 0).div(Zin);
+    const F = I.mul(pSI.Bl);
+    const v = F.div(Zm);
+    const pSound = new Complex(0, w * RHO_AIR * pSI.Sd).mul(v).div(new Complex(2 * Math.PI * distance, 0));
+
+    spl[i] = 20 * Math.log10(pSound.abs() / P_REF);
+    disp[i] = v.abs() / w * 1000; // mm
+    imp[i] = Zin.abs();
+  }
+  return { spl, disp, imp };
+}
+
+// ========== Akima 样条插值 ==========
+class AkimaSpline {
+  constructor(x, y) {
+    if (x.length < 3) throw new Error('至少需要3个数据点');
+    // 按 x 排序
+    const idx = x.map((v, i) => i).sort((a, b) => x[a] - x[b]);
+    this.n = x.length;
+    this.x = idx.map(i => x[i]);
+    this.y = idx.map(i => y[i]);
+    this.m = new Float64Array(this.n - 1); // 段斜率
+    for (let i = 0; i < this.n - 1; i++) {
+      this.m[i] = (this.y[i + 1] - this.y[i]) / (this.x[i + 1] - this.x[i]);
+    }
+    this.t = new Float64Array(this.n); // 节点导数
+    this._computeDerivatives();
+  }
+
+  _computeDerivatives() {
+    const { n, m, t } = this;
+    for (let i = 0; i < n; i++) {
+      const m_im1 = (i >= 2) ? m[i - 2] : m[0];
+      const m_i   = (i < n - 1) ? m[i] : m[n - 2];
+      const m_ip1 = (i < n - 2) ? m[i + 1] : m[n - 2];
+      const m_im2 = (i >= 3) ? m[i - 3] : m_im1;
+
+      const w1 = Math.abs(m_ip1 - m_i);
+      const w2 = Math.abs(m_im1 - m_im2);
+
+      if (w1 + w2 < 1e-15) {
+        t[i] = (m_im1 + m_i) / 2;
+      } else {
+        t[i] = (w1 * m_im1 + w2 * m_i) / (w1 + w2);
+      }
+    }
+    // 端点修正：用二次外推
+    const d0 = (m[0] - t[1]) / (this.x[1] - this.x[0]);
+    t[0] = t[1] - d0 * (this.x[1] - this.x[0]);
+    const dEnd = (m[n - 2] - t[n - 2]) / (this.x[n - 1] - this.x[n - 2]);
+    t[n - 1] = t[n - 2] + dEnd * (this.x[n - 1] - this.x[n - 2]);
+  }
+
+  eval(xq) {
+    if (xq <= this.x[0]) {
+      // 线性外推
+      return this.y[0] + this.t[0] * (xq - this.x[0]);
+    }
+    if (xq >= this.x[this.n - 1]) {
+      return this.y[this.n - 1] + this.t[this.n - 1] * (xq - this.x[this.n - 1]);
+    }
+    // 二分查找段
+    let lo = 0, hi = this.n - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (this.x[mid] <= xq) lo = mid;
+      else hi = mid;
+    }
+    const h = this.x[hi] - this.x[lo];
+    const u = (xq - this.x[lo]) / h;
+    const t0 = this.t[lo], t1 = this.t[hi];
+    const y0 = this.y[lo], y1 = this.y[hi];
+    // Hermite 三次
+    const h00 = (1 + 2*u) * (1 - u) * (1 - u);
+    const h10 = u * (1 - u) * (1 - u);
+    const h01 = u * u * (3 - 2*u);
+    const h11 = u * u * (u - 1);
+    return h00 * y0 + h10 * h * t0 + h01 * y1 + h11 * h * t1;
+  }
+}
+
+// Steffen 样条（备选）
+class SteffenSpline {
+  constructor(x, y) {
+    const idx = x.map((v, i) => i).sort((a, b) => x[a] - x[b]);
+    this.n = x.length;
+    this.x = idx.map(i => x[i]);
+    this.y = idx.map(i => y[i]);
+    this.d = new Float64Array(this.n);
+    for (let i = 0; i < this.n - 1; i++) {
+      const h = this.x[i + 1] - this.x[i];
+      this.d[i] = (this.y[i + 1] - this.y[i]) / h;
+    }
+    this.t = new Float64Array(this.n);
+    this._computeDerivatives();
+  }
+
+  _computeDerivatives() {
+    const { n, d, t, x, y } = this;
+    for (let i = 1; i < n - 1; i++) {
+      const h0 = x[i] - x[i - 1], h1 = x[i + 1] - x[i];
+      const s0 = d[i - 1], s1 = d[i];
+      const p = (s0 * h1 + s1 * h0) / (h0 + h1);
+      const sign = (s0 >= 0 && s1 >= 0) ? 1 : -1;
+      const absP = Math.abs(p);
+      const minS = Math.min(Math.abs(s0), Math.abs(s1));
+      t[i] = sign * Math.min(absP, 2 * minS);
+    }
+    t[0] = d[0] - (d[1] - d[0]) * (x[1] - x[0]) / (x[2] - x[0]);
+    t[0] = (t[0] * d[0] <= 0) ? 0 : t[0];
+    t[n - 1] = d[n - 2] + (d[n - 2] - d[n - 3]) * (x[n - 1] - x[n - 2]) / (x[n - 2] - x[n - 3]);
+    t[n - 1] = (t[n - 1] * d[n - 2] <= 0) ? 0 : t[n - 1];
+  }
+
+  eval(xq) {
+    if (xq <= this.x[0]) return this.y[0] + this.t[0] * (xq - this.x[0]);
+    if (xq >= this.x[this.n - 1]) return this.y[this.n - 1] + this.t[this.n - 1] * (xq - this.x[this.n - 1]);
+    let lo = 0, hi = this.n - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (this.x[mid] <= xq) lo = mid; else hi = mid; }
+    const h = this.x[hi] - this.x[lo];
+    const u = (xq - this.x[lo]) / h;
+    const t0 = this.t[lo], t1 = this.t[hi];
+    const y0 = this.y[lo], y1 = this.y[hi];
+    const h00 = (1 + 2*u) * (1 - u) * (1 - u);
+    const h10 = u * (1 - u) * (1 - u);
+    const h01 = u * u * (3 - 2*u);
+    const h11 = u * u * (u - 1);
+    return h00 * y0 + h10 * h * t0 + h01 * y1 + h11 * h * t1;
+  }
+}
+
+// ========== 非线性计算 ==========
+
+// 解析数据表 "x y" 格式
+function parseDataTable(text) {
+  const lines = text.trim().split(/[\n\r]+/);
+  const xArr = [], yArr = [];
+  for (const line of lines) {
+    const parts = line.trim().split(/[\s,;]+/);
+    if (parts.length >= 2) {
+      const xv = parseFloat(parts[0]);
+      const yv = parseFloat(parts[1]);
+      if (!isNaN(xv) && !isNaN(yv)) { xArr.push(xv); yArr.push(yv); }
+    }
+  }
+  if (xArr.length < 3) return null;
+  return { x: xArr, y: yArr };
+}
+
+// 描述函数法（快速模式）
+function describingFunction(blSpline, cmsSpline, pSI, freqs, vrms, distance) {
+  const N = freqs.length;
+  const splNl = new Float64Array(N);
+  const dispNl = new Float64Array(N);
+  const thdTotal = new Float64Array(N);
+  const thd2 = new Float64Array(N);
+  const thd3 = new Float64Array(N);
+
+  const maxIter = 30;
+  const tol = 1e-6;
+  const nQuad = 128; // 积分点数
+
+  // 预计算积分权重
+  const theta = new Float64Array(nQuad);
+  const sinTh = new Float64Array(nQuad);
+  const cosTh = new Float64Array(nQuad);
+  const sin2Th = new Float64Array(nQuad);
+  for (let j = 0; j < nQuad; j++) {
+    theta[j] = 2 * Math.PI * j / nQuad;
+    sinTh[j] = Math.sin(theta[j]);
+    cosTh[j] = Math.cos(theta[j]);
+    sin2Th[j] = sinTh[j] * sinTh[j];
+  }
+
+  for (let i = 0; i < N; i++) {
+    const w = 2 * Math.PI * freqs[i];
+    const Vpeak = vrms * Math.SQRT2;
+
+    // 先用线性参数求位移初值
+    const ZmLin = new Complex(pSI.Rms, w * pSI.Mms - 1 / (w * pSI.Cms));
+    const ZeLin = new Complex(pSI.Re, w * pSI.Le);
+    const I_lin = new Complex(Vpeak, 0).div(ZeLin.add(new Complex(pSI.Bl * pSI.Bl, 0).div(ZmLin)));
+    const v_lin = I_lin.mul(pSI.Bl).div(ZmLin);
+    let Xamp = v_lin.abs() / w; // 位移幅值 (m)
+
+    // 迭代求等效参数
+    let BlEq = pSI.Bl, kEq = 1 / pSI.Cms;
+    for (let iter = 0; iter < maxIter; iter++) {
+      // 数值积分求描述函数
+      let blInt = 0, kInt = 0;
+      for (let j = 0; j < nQuad; j++) {
+        const xj = Xamp * sinTh[j];
+        const blVal = blSpline.eval(xj * 1000); // m -> mm
+        const cmsVal = cmsSpline.eval(xj * 1000); // mm/N -> 需要转换
+        const kVal = 1 / (cmsVal / 1000); // mm/N -> m/N, then N/m
+        blInt += blVal * sin2Th[j];
+        kInt += kVal * sin2Th[j];
+      }
+      const BlNew = (2 / nQuad) * blInt;
+      const kNew = (2 / nQuad) * kInt;
+
+      // 用新参数算位移
+      const Zm = new Complex(pSI.Rms, w * pSI.Mms - kNew / w);
+      const Ze = new Complex(pSI.Re, w * pSI.Le);
+      const Zin = Ze.add(new Complex(BlNew * BlNew, 0).div(Zm));
+      const I = new Complex(Vpeak, 0).div(Zin);
+      const v = I.mul(BlNew).div(Zm);
+      const Xnew = v.abs() / w;
+
+      if (Math.abs(Xnew - Xamp) / Math.max(Xamp, 1e-12) < tol) {
+        BlEq = BlNew; kEq = kNew; Xamp = Xnew; break;
+      }
+      BlEq = BlNew; kEq = kNew; Xamp = Xnew;
+    }
+
+    // 用收敛参数算 SPL
+    const ZmF = new Complex(pSI.Rms, w * pSI.Mms - kEq / w);
+    const I_f = new Complex(Vpeak, 0).div(new Complex(pSI.Re, w * pSI.Le).add(new Complex(BlEq * BlEq, 0).div(ZmF)));
+    const v_f = I_f.mul(BlEq).div(ZmF);
+    const pSound = new Complex(0, w * RHO_AIR * pSI.Sd).mul(v_f).div(new Complex(2 * Math.PI * distance, 0));
+    splNl[i] = 20 * Math.log10(pSound.abs() / P_REF);
+    dispNl[i] = v_f.abs() / w * 1000;
+
+    // THD 估算：计算 Bl(x(t)) 和 k(x(t)) 的谐波分量
+    const Xmm = Xamp * 1000; // 位移 (mm)
+    const blHarm = new Float64Array(nQuad);
+    const kHarm = new Float64Array(nQuad);
+    for (let j = 0; j < nQuad; j++) {
+      const xj = Xmm * sinTh[j];
+      blHarm[j] = blSpline.eval(xj);
+      const cmsVal = cmsSpline.eval(xj);
+      kHarm[j] = 1 / (cmsVal / 1000);
+    }
+    // DFT 提取谐波
+    const blDC = blHarm.reduce((a, b) => a + b, 0) / nQuad;
+    let bl1cos = 0, bl1sin = 0, bl2cos = 0, bl2sin = 0, bl3cos = 0, bl3sin = 0;
+    for (let j = 0; j < nQuad; j++) {
+      const v = blHarm[j] - blDC;
+      bl1cos += v * cosTh[j];
+      bl1sin += v * sinTh[j];
+      bl2cos += v * Math.cos(2 * theta[j]);
+      bl2sin += v * Math.sin(2 * theta[j]);
+      bl3cos += v * Math.cos(3 * theta[j]);
+      bl3sin += v * Math.sin(3 * theta[j]);
+    }
+    const H1 = Math.sqrt(bl1cos*bl1cos + bl1sin*bl1sin) / nQuad;
+    const H2 = Math.sqrt(bl2cos*bl2cos + bl2sin*bl2sin) / nQuad;
+    const H3 = Math.sqrt(bl3cos*bl3cos + bl3sin*bl3sin) / nQuad;
+    // THD 用 H2, H3 代用估算
+    const thdVal = Math.sqrt(H2*H2 + H3*H3) / Math.max(H1, 1e-12) * 100;
+    thdTotal[i] = thdVal;
+    thd2[i] = H2 / Math.max(H1, 1e-12) * 100;
+    thd3[i] = H3 / Math.max(H1, 1e-12) * 100;
+  }
+  return { spl: splNl, disp: dispNl, thdTotal, thd2, thd3 };
+}
+
+// RK4 时域求解（精细模式）
+function rk4Solve(blSpline, cmsSpline, pSI, freq, Vpeak, distance) {
+  const w = 2 * Math.PI * freq;
+  const LeSafe = Math.max(pSI.Le, 1e-12);
+
+  const period = 1 / freq;
+  const tau = pSI.Mms / pSI.Rms;
+  const tSettle = Math.max(5 * tau, 3 * period);
+  const nSettle = Math.max(50, Math.ceil(tSettle * freq));
+  const nMeasure = 4;
+  const stepsPerCycle = 200;
+  const dt = period / stepsPerCycle;
+  const nSettleSteps = nSettle * stepsPerCycle;
+  const nMeasureSteps = nMeasure * stepsPerCycle;
+
+  function derivative(x, v, i, t) {
+    const xmm = x * 1000;
+    const blVal = blSpline.eval(xmm);
+    const cmsVal = cmsSpline.eval(xmm);
+    const kVal = 1 / Math.max(cmsVal / 1000, 1e-9);
+    const Vt = Vpeak * Math.cos(w * t);
+    return [
+      v,
+      (blVal * i - pSI.Rms * v - kVal * x) / pSI.Mms,
+      (Vt - pSI.Re * i - blVal * v) / LeSafe
+    ];
+  }
+
+  function rk4Step(x, v, i, t, dt) {
+    const [k1x, k1v, k1i] = derivative(x, v, i, t);
+    const [k2x, k2v, k2i] = derivative(x + 0.5*dt*k1x, v + 0.5*dt*k1v, i + 0.5*dt*k1i, t + 0.5*dt);
+    const [k3x, k3v, k3i] = derivative(x + 0.5*dt*k2x, v + 0.5*dt*k2v, i + 0.5*dt*k2i, t + 0.5*dt);
+    const [k4x, k4v, k4i] = derivative(x + dt*k3x, v + dt*k3v, i + dt*k3i, t + dt);
+    return [
+      x + (dt / 6) * (k1x + 2*k2x + 2*k3x + k4x),
+      v + (dt / 6) * (k1v + 2*k2v + 2*k3v + k4v),
+      i + (dt / 6) * (k1i + 2*k2i + 2*k3i + k4i),
+      t + dt
+    ];
+  }
+
+  // 预烧（settling）
+  let x = 0, v = 0, i = 0, t = 0;
+  for (let step = 0; step < nSettleSteps; step++) {
+    [x, v, i, t] = rk4Step(x, v, i, t, dt);
+  }
+
+  // 测量：采集 nMeasure 周期
+  const nSamples = nMeasureSteps;
+  const xWave = new Float64Array(nSamples);
+  const tWave = new Float64Array(nSamples);
+  for (let s = 0; s < nSamples; s++) {
+    [x, v, i, t] = rk4Step(x, v, i, t, dt);
+    xWave[s] = x;
+    tWave[s] = t;
+  }
+
+  // 提取谐波
+  const h = extractHarmonics(xWave, tWave, w);
+
+  const vFund = h.v1;
+  const pFund = w * RHO_AIR * pSI.Sd * vFund / (2 * Math.PI * distance);
+  const spl = 20 * Math.log10(Math.max(pFund, 1e-12) / P_REF);
+  const dispFund = vFund / w * 1000;
+
+  return { spl, disp: dispFund, thdTotal: h.thd, thd2: h.thd2, thd3: h.thd3, h1: h.h1, h2: h.h2, h3: h.h3 };
+}
+
+function extractHarmonics(signal, tArr, w) {
+  const N = signal.length;
+  const dt = tArr[1] - tArr[0];
+  // 提取 H1-H5 的傅里叶系数
+  let a1 = 0, b1 = 0, a2 = 0, b2 = 0, a3 = 0, b3 = 0, a4 = 0, b4 = 0, a5 = 0, b5 = 0;
+  for (let i = 0; i < N; i++) {
+    const s = signal[i];
+    const wt = w * tArr[i];
+    a1 += s * Math.cos(wt);     b1 += s * Math.sin(wt);
+    a2 += s * Math.cos(2*wt);   b2 += s * Math.sin(2*wt);
+    a3 += s * Math.cos(3*wt);   b3 += s * Math.sin(3*wt);
+    a4 += s * Math.cos(4*wt);   b4 += s * Math.sin(4*wt);
+    a5 += s * Math.cos(5*wt);   b5 += s * Math.sin(5*wt);
+  }
+  const norm = 2 / N;
+  a1 *= norm; b1 *= norm; a2 *= norm; b2 *= norm;
+  a3 *= norm; b3 *= norm; a4 *= norm; b4 *= norm;
+  a5 *= norm; b5 *= norm;
+
+  const h1 = Math.sqrt(a1*a1 + b1*b1);
+  const h2 = Math.sqrt(a2*a2 + b2*b2);
+  const h3 = Math.sqrt(a3*a3 + b3*b3);
+  const h4 = Math.sqrt(a4*a4 + b4*b4);
+  const h5 = Math.sqrt(a5*a5 + b5*b5);
+  const thd = Math.sqrt(h2*h2 + h3*h3 + h4*h4 + h5*h5) / Math.max(h1, 1e-12) * 100;
+  const thd2 = h2 / Math.max(h1, 1e-12) * 100;
+  const thd3 = h3 / Math.max(h1, 1e-12) * 100;
+
+  // 速度基波幅值: v = dx/dt, v1 = w * h1
+  const v1 = w * h1;
+
+  return { a1, b1, a2, b2, a3, b3, h1, h2, h3, h4, h5, thd, thd2, thd3, v1 };
+}
+
+function getFreqRange() {
+  const fStart = parseFloat(document.getElementById('fStart').value) || 20;
+  const fEnd = parseFloat(document.getElementById('fEnd').value) || 20000;
+  const nPts = parseInt(document.getElementById('fPoints').value) || 500;
+  const fMin = Math.max(1, Math.min(fStart, fEnd));
+  const fMax = Math.max(1, Math.max(fStart, fEnd));
+  const n = Math.max(10, Math.min(nPts, 2000));
+  const arr = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    arr[i] = fMin * Math.pow(fMax / fMin, i / (n - 1));
+  }
+  return { freqs: arr, fMin, fMax, n };
+}
+
+let chartSPL = null, chartDisp = null;
+let chartNlSPL = null, chartNlDisp = null, chartTHD = null;
+let linearResult = null;
+let currentFreqs = null;
+
+function createChart(canvasId, title, yLabel, color) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  return new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [{ label: title, data: [], borderColor: color, borderWidth: 1.5, pointRadius: 0, tension: 0.1 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: false,
+      scales: {
+        x: {
+          type: 'logarithmic',
+          title: { display: true, text: '频率 (Hz)', color: '#abb2bf' },
+          min: 20, max: 20000,
+          ticks: { color: '#666', callback: v => v >= 1000 ? (v/1000)+'k' : v },
+          grid: { color: '#2c313a' }
+        },
+        y: {
+          title: { display: true, text: yLabel, color: '#abb2bf' },
+          ticks: { color: '#666' },
+          grid: { color: '#2c313a' }
+        }
+      },
+      plugins: {
+        legend: { labels: { color: '#abb2bf', font: { size: 11 } } },
+        tooltip: {
+          callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}` }
+        }
+      }
+    }
+  });
+}
+
+function updateLineChart(chart, labels, data, datasetIdx) {
+  chart.data.labels = labels;
+  if (datasetIdx === undefined) {
+    chart.data.datasets[0].data = data;
+  } else {
+    while (chart.data.datasets.length <= datasetIdx) {
+      chart.data.datasets.push({ borderWidth: 1.5, pointRadius: 0, tension: 0.1 });
+    }
+    chart.data.datasets[datasetIdx].data = data;
+  }
+  chart.update('none');
+}
+
+// ========== UI 逻辑 ==========
+function calcAll() {
+  const p = getParams();
+  const pSI = toSI(p);
+  const vrms = parseFloat(document.getElementById('vrms').value) || 1;
+  const dist = parseFloat(document.getElementById('distance').value) || 0.1;
+
+  // 派生参数
+  const derived = calcDerived(pSI);
+  document.getElementById('derivedParams').style.display = 'grid';
+  document.getElementById('dp_fs').textContent = derived.Fs.toFixed(1);
+  document.getElementById('dp_qts').textContent = derived.Qts.toFixed(3);
+  document.getElementById('dp_qes').textContent = derived.Qes.toFixed(3);
+  document.getElementById('dp_qms').textContent = derived.Qms.toFixed(3);
+  document.getElementById('dp_vas').textContent = (derived.Vas * 1e6).toFixed(3);
+  document.getElementById('dp_spl0').textContent = derived.SPL0.toFixed(1);
+
+  document.getElementById('linearStatus').textContent = '计算中...';
+
+  // 获取自定义频率范围
+  const { freqs, fMin, fMax } = getFreqRange();
+  currentFreqs = freqs;
+
+  // 异步计算避免阻塞 UI
+  setTimeout(() => {
+    linearResult = calcLinearResponse(p, vrms, dist, freqs);
+    document.getElementById('linearStatus').textContent =
+      `完成 · 峰值 SPL: ${linearResult.spl.reduce((a,b)=>Math.max(a,b),-Infinity).toFixed(1)} dB @ ${dist}m`;
+
+    // 初始化图表
+    if (!chartSPL) {
+      chartSPL = createChart('chartSPL', 'SPL (dB)', '声压级 (dB)', '#61afef');
+      chartDisp = createChart('chartDisp', '位移 (mm)', '位移 (mm)', '#e06c75');
+      chartDisp.data.datasets.push({
+        label: 'Xmax',
+        data: [],
+        borderColor: '#e06c75',
+        borderWidth: 1,
+        borderDash: [5, 5],
+        pointRadius: 0,
+        fill: false
+      });
+    }
+
+    // 更新图表X轴范围
+    const freqArr = Array.from(freqs);
+    chartSPL.options.scales.x.min = fMin;
+    chartSPL.options.scales.x.max = fMax;
+    chartDisp.options.scales.x.min = fMin;
+    chartDisp.options.scales.x.max = fMax;
+
+    updateLineChart(chartSPL, freqArr, Array.from(linearResult.spl), 0);
+    updateLineChart(chartDisp, freqArr, Array.from(linearResult.disp), 0);
+    const xmaxLine = new Array(freqs.length).fill(p.Xmax);
+    updateLineChart(chartDisp, freqArr, xmaxLine, 1);
+
+    const xmaxVal = p.Xmax;
+    let xmaxCrossover = null;
+    for (let i = 1; i < linearResult.disp.length; i++) {
+      if (linearResult.disp[i - 1] <= xmaxVal && linearResult.disp[i] >= xmaxVal) {
+        xmaxCrossover = freqs[i]; break;
+      }
+      if (linearResult.disp[i - 1] >= xmaxVal && linearResult.disp[i] <= xmaxVal) {
+        xmaxCrossover = freqs[i]; break;
+      }
+    }
+    if (xmaxCrossover) {
+      document.getElementById('linearStatus').textContent +=
+        ` · 位移超Xmax起始: ${xmaxCrossover.toFixed(0)} Hz`;
+    }
+  }, 10);
+}
+
+// 非线性面板折叠
+function toggleNonlinear() {
+  const body = document.getElementById('nlBody');
+  const toggle = document.getElementById('nlToggle');
+  body.classList.toggle('show');
+  toggle.classList.toggle('open');
+}
+
+// 非线性计算
+async function calcNonlinear() {
+  const p = getParams();
+  const pSI = toSI(p);
+  const vrms = parseFloat(document.getElementById('vrms').value) || 1;
+  const dist = parseFloat(document.getElementById('distance').value) || 0.1;
+  const mode = document.getElementById('nlMode').value;
+  const interpType = document.getElementById('nlInterp').value;
+
+  // 解析 Bl(x) 数据
+  const blParsed = parseDataTable(document.getElementById('blData').value);
+  if (!blParsed) { alert('请至少输入3行 Bl(x) 数据，格式: x(mm) Bl(T·m)'); return; }
+
+  // 解析 Cms(x) 数据
+  const cmsParsed = parseDataTable(document.getElementById('cmsData').value);
+  if (!cmsParsed) { alert('请至少输入3行 Cms(x) 数据，格式: x(mm) Cms(mm/N)'); return; }
+
+  // 构建插值器
+  let blSpline, cmsSpline;
+  try {
+    blSpline = interpType === 'akima'
+      ? new AkimaSpline(blParsed.x, blParsed.y)
+      : new SteffenSpline(blParsed.x, blParsed.y);
+    cmsSpline = interpType === 'akima'
+      ? new AkimaSpline(cmsParsed.x, cmsParsed.y)
+      : new SteffenSpline(cmsParsed.x, cmsParsed.y);
+  } catch (e) {
+    alert('插值器构建失败: ' + e.message); return;
+  }
+
+  const statusEl = document.getElementById('nlStatus');
+  statusEl.textContent = '计算中...';
+  document.getElementById('nlCharts').style.display = 'none';
+
+  // 用自定义频点范围
+  const nPts = mode === 'timedomain' ? Math.min(80, parseInt(document.getElementById('fPoints').value) || 80) : Math.min(200, parseInt(document.getElementById('fPoints').value) || 200);
+  const fStart = parseFloat(document.getElementById('fStart').value) || 20;
+  const fEnd = parseFloat(document.getElementById('fEnd').value) || 20000;
+  const fMin = Math.max(1, Math.min(fStart, fEnd));
+  const fMax = Math.max(1, Math.max(fStart, fEnd));
+  const nlFreqs = new Float64Array(nPts);
+  for (let i = 0; i < nPts; i++) {
+    nlFreqs[i] = fMin * Math.pow(fMax / fMin, i / (nPts - 1));
+  }
+
+  if (mode === 'harmonic') {
+    // 快速模式：同步完成
+    const result = describingFunction(blSpline, cmsSpline, pSI, nlFreqs, vrms, dist);
+    showNonlinearResults(result, nlFreqs);
+    statusEl.textContent = '完成（快速谐波平衡）';
+  } else {
+    // 时域模式：逐步计算，显示进度
+    statusEl.textContent = '时域求解中（较慢）... 0%';
+    await new Promise(r => setTimeout(r, 50));
+
+    const spl = new Float64Array(nPts);
+    const disp = new Float64Array(nPts);
+    const thdT = new Float64Array(nPts);
+    const thd2 = new Float64Array(nPts);
+    const thd3 = new Float64Array(nPts);
+
+    for (let i = 0; i < nPts; i++) {
+      const r = rk4Solve(blSpline, cmsSpline, pSI, nlFreqs[i], vrms * Math.SQRT2, dist);
+      spl[i] = r.spl;
+      disp[i] = r.disp;
+      thdT[i] = r.thdTotal;
+      thd2[i] = r.thd2;
+      thd3[i] = r.thd3;
+
+      if (i % 10 === 0 || i === nPts - 1) {
+        statusEl.textContent = `时域求解中... ${Math.round((i + 1) / nPts * 100)}% (${i+1}/${nPts})`;
+        await new Promise(r => setTimeout(r, 10));
+      }
+    }
+    showNonlinearResults({ spl, disp, thdTotal: thdT, thd2, thd3 }, nlFreqs);
+    statusEl.textContent = `完成（精细时域求解 · ${nPts} 频点）`;
+  }
+}
+
+function showNonlinearResults(nlResult, nlFreqs) {
+  document.getElementById('nlCharts').style.display = 'flex';
+
+  const p = getParams();
+  const vrms = parseFloat(document.getElementById('vrms').value) || 1;
+  const dist = parseFloat(document.getElementById('distance').value) || 0.1;
+  const refFreqs = currentFreqs || nlFreqs;
+  const reCalc = calcLinearResponse(p, vrms, dist, refFreqs);
+
+  const freqArr = Array.from(nlFreqs);
+  const fMin = nlFreqs[0], fMax = nlFreqs[nlFreqs.length - 1];
+
+  // 线性 SPL 插值到非线性频点
+  const linSplInterp = new Float64Array(nlFreqs.length);
+  const linDispInterp = new Float64Array(nlFreqs.length);
+  {
+    let j = 0;
+    for (let i = 0; i < nlFreqs.length; i++) {
+      while (j < refFreqs.length - 1 && refFreqs[j] < nlFreqs[i]) j++;
+      if (j === 0) { linSplInterp[i] = reCalc.spl[0]; linDispInterp[i] = reCalc.disp[0]; }
+      else if (j >= refFreqs.length) { linSplInterp[i] = reCalc.spl[refFreqs.length-1]; linDispInterp[i] = reCalc.disp[refFreqs.length-1]; }
+      else {
+        const t = (nlFreqs[i] - refFreqs[j-1]) / (refFreqs[j] - refFreqs[j-1]);
+        linSplInterp[i] = reCalc.spl[j-1] + t * (reCalc.spl[j] - reCalc.spl[j-1]);
+        linDispInterp[i] = reCalc.disp[j-1] + t * (reCalc.disp[j] - reCalc.disp[j-1]);
+      }
+    }
+  }
+
+  // 更新X轴
+  const updateX = (chart) => {
+    chart.options.scales.x.min = fMin;
+    chart.options.scales.x.max = fMax;
+  };
+
+  // SPL 对比图
+  if (!chartNlSPL) {
+    chartNlSPL = new Chart(document.getElementById('chartNlSPL').getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          { label: 'SPL 线性', data: [], borderColor: '#61afef', borderWidth: 1.5, pointRadius: 0 },
+          { label: 'SPL 非线性', data: [], borderColor: '#e06c75', borderWidth: 1.5, pointRadius: 0, borderDash: [] }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        scales: {
+          x: { type: 'logarithmic', title: { display: true, text: '频率 (Hz)', color: '#abb2bf' }, min: 20, max: 20000, ticks: { color: '#666', callback: v => v>=1000?(v/1000)+'k':v }, grid: { color: '#2c313a' } },
+          y: { title: { display: true, text: 'SPL (dB)', color: '#abb2bf' }, ticks: { color: '#666' }, grid: { color: '#2c313a' } }
+        },
+        plugins: { legend: { labels: { color: '#abb2bf' } } }
+      }
+    });
+  }
+  chartNlSPL.data.labels = freqArr;
+  chartNlSPL.data.datasets[0].data = Array.from(linSplInterp);
+  chartNlSPL.data.datasets[1].data = Array.from(nlResult.spl);
+  updateX(chartNlSPL);
+  chartNlSPL.update('none');
+
+  // 位移对比图
+  if (!chartNlDisp) {
+    chartNlDisp = new Chart(document.getElementById('chartNlDisp').getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          { label: '位移 线性', data: [], borderColor: '#61afef', borderWidth: 1.5, pointRadius: 0 },
+          { label: '位移 非线性', data: [], borderColor: '#e06c75', borderWidth: 1.5, pointRadius: 0 },
+          { label: 'Xmax', data: [], borderColor: '#e06c75', borderWidth: 1, borderDash: [5,5], pointRadius: 0, fill: false }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        scales: {
+          x: { type: 'logarithmic', title: { display: true, text: '频率 (Hz)', color: '#abb2bf' }, min: 20, max: 20000, ticks: { color: '#666', callback: v => v>=1000?(v/1000)+'k':v }, grid: { color: '#2c313a' } },
+          y: { title: { display: true, text: '位移 (mm)', color: '#abb2bf' }, ticks: { color: '#666' }, grid: { color: '#2c313a' } }
+        },
+        plugins: { legend: { labels: { color: '#abb2bf' } } }
+      }
+    });
+  }
+  chartNlDisp.data.labels = freqArr;
+  chartNlDisp.data.datasets[0].data = Array.from(linDispInterp);
+  chartNlDisp.data.datasets[1].data = Array.from(nlResult.disp);
+  chartNlDisp.data.datasets[2].data = new Array(nlFreqs.length).fill(p.Xmax);
+  updateX(chartNlDisp);
+  chartNlDisp.update('none');
+
+  // THD 图
+  if (!chartTHD) {
+    chartTHD = new Chart(document.getElementById('chartTHD').getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          { label: 'THD Total (%)', data: [], borderColor: '#e5c07b', borderWidth: 2, pointRadius: 0 },
+          { label: 'THD H2 (%)', data: [], borderColor: '#61afef', borderWidth: 1, pointRadius: 0, borderDash: [3,3] },
+          { label: 'THD H3 (%)', data: [], borderColor: '#e06c75', borderWidth: 1, pointRadius: 0, borderDash: [3,3] }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        scales: {
+          x: { type: 'logarithmic', title: { display: true, text: '频率 (Hz)', color: '#abb2bf' }, min: 20, max: 20000, ticks: { color: '#666', callback: v => v>=1000?(v/1000)+'k':v }, grid: { color: '#2c313a' } },
+          y: { title: { display: true, text: 'THD (%)', color: '#abb2bf' }, ticks: { color: '#666' }, grid: { color: '#2c313a' }, min: 0 }
+        },
+        plugins: { legend: { labels: { color: '#abb2bf' } } }
+      }
+    });
+  }
+  chartTHD.data.labels = freqArr;
+  chartTHD.data.datasets[0].data = Array.from(nlResult.thdTotal);
+  chartTHD.data.datasets[1].data = Array.from(nlResult.thd2);
+  chartTHD.data.datasets[2].data = Array.from(nlResult.thd3);
+  updateX(chartTHD);
+  chartTHD.update('none');
+}
+
+// ========== 导出功能 ==========
+function exportCSV() {
+  if (!linearResult || !currentFreqs) { alert('请先计算线性响应'); return; }
+  const p = getParams();
+  let csv = 'Freq(Hz),SPL(dB),Disp(mm)\n';
+  for (let i = 0; i < currentFreqs.length; i++) {
+    csv += `${currentFreqs[i].toFixed(2)},${linearResult.spl[i].toFixed(3)},${linearResult.disp[i].toFixed(4)}\n`;
+  }
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'speaker_response.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportPNG(chartId) {
+  const canvas = document.getElementById(chartId);
+  if (!canvas) { alert('图表未就绪'); return; }
+  const a = document.createElement('a');
+  a.href = canvas.toDataURL('image/png');
+  a.download = chartId + '.png';
+  a.click();
+}
+
+// 预置参数
+function loadPreset(type) {
+  const presets = {
+    '1511': { re:7.5, le:0.04, bl:1.10, cms:0.40, mms:55, rms:0.07, sd:85, xmax:0.30 },
+    '1813': { re:4.0, le:0.02, bl:0.70, cms:0.55, mms:42, rms:0.05, sd:125, xmax:0.35 },
+    'custom': { re:8.0, le:0.06, bl:0.90, cms:0.35, mms:65, rms:0.06, sd:95, xmax:0.40 },
+  };
+  const pr = presets[type];
+  if (!pr) return;
+  document.getElementById('re').value = pr.re;
+  document.getElementById('le').value = pr.le;
+  document.getElementById('bl').value = pr.bl;
+  document.getElementById('cms').value = pr.cms;
+  document.getElementById('mms').value = pr.mms;
+  document.getElementById('rms').value = pr.rms;
+  document.getElementById('sd').value = pr.sd;
+  document.getElementById('xmax').value = pr.xmax;
+}
+
+// 页面初始化：自动计算一次
+window.addEventListener('load', () => {
+  setTimeout(calcAll, 200);
+});
+</script>
+
+</body>
+</html>
