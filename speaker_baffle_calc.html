@@ -201,6 +201,7 @@ body {
   <div class="right-panel" id="rightPanel">
     <div class="chart-container"><canvas id="chartSPL"></canvas></div>
     <div class="chart-container"><canvas id="chartDisp"></canvas></div>
+    <div class="chart-container"><canvas id="chartEQ"></canvas></div>
   </div>
 </div>
 
@@ -698,7 +699,7 @@ function getFreqRange() {
   return { freqs: arr, fMin, fMax, n };
 }
 
-let chartSPL = null, chartDisp = null;
+let chartSPL = null, chartDisp = null, chartEQ = null;
 let chartNlSPL = null, chartNlDisp = null, chartTHD = null;
 let linearResult = null;
 let currentFreqs = null;
@@ -778,6 +779,7 @@ function calcAll() {
     // 最大能力频响计算
     const vmax = parseFloat(document.getElementById('vmax').value) || 2.2;
     const maxSPL = new Float64Array(freqs.length);
+    const eqVoltage = new Float64Array(freqs.length); // 达到最大能力的RMS电压
     const limitType = new Uint8Array(freqs.length); // 0=Vmax限, 1=Xmax限
     let crossoverFreq = null;
     for (let i = 0; i < freqs.length; i++) {
@@ -786,9 +788,11 @@ function calcAll() {
       if (vToXmax <= vmax) {
         limitType[i] = 1; // Xmax-limited
         maxSPL[i] = linearResult.spl[i] + 20 * Math.log10(vToXmax / vrms);
+        eqVoltage[i] = vToXmax;
       } else {
         limitType[i] = 0; // Vmax-limited
         maxSPL[i] = linearResult.spl[i] + 20 * Math.log10(vmax / vrms);
+        eqVoltage[i] = vmax;
       }
     }
     // 找交叉频率（Xmax限制→Vmax限制的过渡点）
@@ -826,20 +830,36 @@ function calcAll() {
         pointRadius: 0,
         fill: false
       });
+      chartEQ = createChart('chartEQ', 'EQ电压 (Vrms)', '电压 (Vrms)', '#56b6c2');
     }
 
     // 更新图表X轴范围
     const freqArr = Array.from(freqs);
-    chartSPL.options.scales.x.min = fMin;
-    chartSPL.options.scales.x.max = fMax;
-    chartDisp.options.scales.x.min = fMin;
-    chartDisp.options.scales.x.max = fMax;
+    [chartSPL, chartDisp, chartEQ].forEach(ch => {
+      ch.options.scales.x.min = fMin;
+      ch.options.scales.x.max = fMax;
+    });
 
     updateLineChart(chartSPL, freqArr, Array.from(linearResult.spl), 0);
     updateLineChart(chartSPL, freqArr, Array.from(maxSPL), 1);
     updateLineChart(chartDisp, freqArr, Array.from(linearResult.disp), 0);
     const xmaxLine = new Array(freqs.length).fill(p.Xmax);
     updateLineChart(chartDisp, freqArr, xmaxLine, 1);
+    updateLineChart(chartEQ, freqArr, Array.from(eqVoltage), 0);
+    // Vmax 参考线
+    if (chartEQ.data.datasets.length < 2) {
+      chartEQ.data.datasets.push({
+        label: 'Vmax',
+        data: [],
+        borderColor: '#56b6c2',
+        borderWidth: 1,
+        borderDash: [5, 5],
+        pointRadius: 0,
+        fill: false
+      });
+    }
+    const vmaxLine = new Array(freqs.length).fill(vmax);
+    updateLineChart(chartEQ, freqArr, vmaxLine, 1);
 
     const xmaxVal = p.Xmax;
     let xmaxCrossover = null;
