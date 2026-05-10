@@ -150,7 +150,7 @@ body {
     <div class="section-title">TS 参数输入</div>
     <div class="param-grid">
       <div class="param-row"><label>Re (Ω)</label><input id="re" type="number" value="6.8" step="any"></div>
-      <div class="param-row"><label>Le (mH)</label><input id="le" type="number" value="0" step="any"></div>
+      <div class="param-row"><label>Le (mH)</label><input id="le" type="number" value="0.03" step="any"></div>
       <div class="param-row"><label>Bl (T·m)</label><input id="bl" type="number" value="0.55" step="any"></div>
       <div class="param-row"><label>Cms (mm/N)</label><input id="cms" type="number" value="6.3" step="any"></div>
       <div class="param-row"><label>Mms (mg)</label><input id="mms" type="number" value="70" step="any"></div>
@@ -619,9 +619,10 @@ function describingFunction(blSpline, cmsSpline, pSI, freqs, vrms, distance) {
 }
 
 // RK4 时域求解（精细模式）
+// Le<1μH 时自动切换代数电流方程，避免 ODE 刚性
 function rk4Solve(blSpline, cmsSpline, pSI, freq, Vpeak, distance) {
   const w = 2 * Math.PI * freq;
-  const LeSafe = Math.max(pSI.Le, 1e-12);
+  const useAlgebraicI = pSI.Le < 1e-6;
 
   const period = 1 / freq;
   const tau = pSI.Mms / pSI.Rms;
@@ -633,55 +634,65 @@ function rk4Solve(blSpline, cmsSpline, pSI, freq, Vpeak, distance) {
   const nSettleSteps = nSettle * stepsPerCycle;
   const nMeasureSteps = nMeasure * stepsPerCycle;
 
-  function derivative(x, v, i, t) {
+  // 通用：非线性参数求值
+  function evalP(x) {
     const xmm = x * 1000;
-    const blVal = blSpline.eval(xmm);
-    const cmsVal = cmsSpline.eval(xmm);
-    const kVal = 1 / Math.max(cmsVal / 1000, 1e-9);
-    const Vt = Vpeak * Math.cos(w * t);
-    return [
-      v,
-      (blVal * i - pSI.Rms * v - kVal * x) / pSI.Mms,
-      (Vt - pSI.Re * i - blVal * v) / LeSafe
-    ];
+    return { bl: blSpline.eval(xmm), k: 1 / Math.max(cmsSpline.eval(xmm) / 1000, 1e-9) };
   }
 
-  function rk4Step(x, v, i, t, dt) {
-    const [k1x, k1v, k1i] = derivative(x, v, i, t);
-    const [k2x, k2v, k2i] = derivative(x + 0.5*dt*k1x, v + 0.5*dt*k1v, i + 0.5*dt*k1i, t + 0.5*dt);
-    const [k3x, k3v, k3i] = derivative(x + 0.5*dt*k2x, v + 0.5*dt*k2v, i + 0.5*dt*k2i, t + 0.5*dt);
-    const [k4x, k4v, k4i] = derivative(x + dt*k3x, v + dt*k3v, i + dt*k3i, t + dt);
-    return [
-      x + (dt / 6) * (k1x + 2*k2x + 2*k3x + k4x),
-      v + (dt / 6) * (k1v + 2*k2v + 2*k3v + k4v),
-      i + (dt / 6) * (k1i + 2*k2i + 2*k3i + k4i),
-      t + dt
-    ];
+  // 3状态 (x, v, i) — Le 非零时
+  function d3(x, v, i, t) {
+    const p = evalP(x); const Vt = Vpeak * Math.cos(w * t);
+    return [v, (p.bl * i - pSI.Rms * v - p.k * x) / pSI.Mms, (Vt - pSI.Re * i - p.bl * v) / pSI.Le];
+  }
+  function s3(x, v, i, t) {
+    const [a1,b1,c1] = d3(x, v, i, t);
+    const [a2,b2,c2] = d3(x+0.5*dt*a1, v+0.5*dt*b1, i+0.5*dt*c1, t+0.5*dt);
+    const [a3,b3,c3] = d3(x+0.5*dt*a2, v+0.5*dt*b2, i+0.5*dt*c2, t+0.5*dt);
+    const [a4,b4,c4] = d3(x+dt*a3, v+dt*b3, i+dt*c3, t+dt);
+    return [x+(dt/6)*(a1+2*a2+2*a3+a4), v+(dt/6)*(b1+2*b2+2*b3+b4), i+(dt/6)*(c1+2*c2+2*c3+c4), t+dt];
   }
 
-  // 预烧（settling）
+  // 2状态 (x, v) — Le≈0 时 i=(V-Bl·v)/Re
+  function d2(x, v, t) {
+    const p = evalP(x); const Vt = Vpeak * Math.cos(w * t);
+    const iNow = (Vt - p.bl * v) / pSI.Re;
+    return [v, (p.bl * iNow - pSI.Rms * v - p.k * x) / pSI.Mms];
+  }
+  function s2(x, v, t) {
+    const [a1,b1] = d2(x, v, t);
+    const [a2,b2] = d2(x+0.5*dt*a1, v+0.5*dt*b1, t+0.5*dt);
+    const [a3,b3] = d2(x+0.5*dt*a2, v+0.5*dt*b2, t+0.5*dt);
+    const [a4,b4] = d2(x+dt*a3, v+dt*b3, t+dt);
+    return [x+(dt/6)*(a1+2*a2+2*a3+a4), v+(dt/6)*(b1+2*b2+2*b3+b4), t+dt];
+  }
+
   let x = 0, v = 0, i = 0, t = 0;
-  for (let step = 0; step < nSettleSteps; step++) {
-    [x, v, i, t] = rk4Step(x, v, i, t, dt);
+  if (useAlgebraicI) {
+    for (let s = 0; s < nSettleSteps; s++) [x, v, t] = s2(x, v, t);
+  } else {
+    for (let s = 0; s < nSettleSteps; s++) [x, v, i, t] = s3(x, v, i, t);
   }
 
-  // 测量：采集 nMeasure 周期
+  // 测量
   const nSamples = nMeasureSteps;
   const xWave = new Float64Array(nSamples);
   const tWave = new Float64Array(nSamples);
-  for (let s = 0; s < nSamples; s++) {
-    [x, v, i, t] = rk4Step(x, v, i, t, dt);
-    xWave[s] = x;
-    tWave[s] = t;
+  if (useAlgebraicI) {
+    for (let s = 0; s < nSamples; s++) {
+      [x, v, t] = s2(x, v, t); xWave[s] = x; tWave[s] = t;
+    }
+  } else {
+    for (let s = 0; s < nSamples; s++) {
+      [x, v, i, t] = s3(x, v, i, t); xWave[s] = x; tWave[s] = t;
+    }
   }
 
-  // 提取谐波
   const h = extractHarmonics(xWave, tWave, w);
-
-  const vFund = h.v1; // 峰值速度 (Vpeak激励→峰值响应)
+  const vFund = h.v1;
   const pFund = w * RHO_AIR * pSI.Sd * vFund / (2 * Math.PI * distance);
   const spl = 20 * Math.log10(Math.max(pFund, 1e-12) / (Math.SQRT2 * P_REF));
-  const dispFund = vFund / w * 1000; // 峰值位移 (mm)
+  const dispFund = vFund / w * 1000;
 
   return { spl, disp: dispFund, thdTotal: h.thd, thd2: h.thd2, thd3: h.thd3, h1: h.h1, h2: h.h2, h3: h.h3 };
 }
@@ -964,7 +975,7 @@ async function calcNonlinear() {
   document.getElementById('nlCharts').style.display = 'flex';
 
   // 用自定义频点范围
-  const nPts = mode === 'timedomain' ? Math.min(200, parseInt(document.getElementById('fPoints').value) || 200) : Math.min(200, parseInt(document.getElementById('fPoints').value) || 200);
+  const nPts = mode === 'timedomain' ? Math.min(250, parseInt(document.getElementById('fPoints').value) || 250) : Math.min(200, parseInt(document.getElementById('fPoints').value) || 200);
   const fEnd = parseFloat(document.getElementById('fEnd').value) || 20000;
   const fMin = 20; // 时域和快速模式均从20Hz起始
   const fMax = Math.max(20, fEnd);
@@ -980,7 +991,7 @@ async function calcNonlinear() {
     statusEl.textContent = '完成（快速谐波平衡）';
   } else {
     // 时域模式：逐步计算，显示进度
-    statusEl.textContent = '时域求解中（较慢）... 0%';
+    statusEl.textContent = `时域求解中（${nPts}频点 20Hz-${fMax.toFixed(0)}Hz，较慢）... 0%`;
     await new Promise(r => setTimeout(r, 50));
 
     const spl = new Float64Array(nPts);
@@ -1217,7 +1228,7 @@ function exportPNG(chartId) {
 // 预置参数
 function loadPreset(type) {
   const presets = {
-    '2110': { re:6.8, le:0, bl:0.55, cms:6.3, mms:70, rms:0.06, sd:116, xmax:0.65 },
+    '2110': { re:6.8, le:0.03, bl:0.55, cms:6.3, mms:70, rms:0.06, sd:116, xmax:0.65 },
     '1511': { re:7.5, le:0.04, bl:1.10, cms:0.40, mms:55, rms:0.07, sd:85, xmax:0.30 },
     '1813': { re:4.0, le:0.02, bl:0.70, cms:0.55, mms:42, rms:0.05, sd:125, xmax:0.35 },
     'custom': { re:8.0, le:0.06, bl:0.90, cms:0.35, mms:65, rms:0.06, sd:95, xmax:0.40 },
