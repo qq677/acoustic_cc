@@ -622,7 +622,8 @@ function describingFunction(blSpline, cmsSpline, pSI, freqs, vrms, distance) {
 // Le<1μH 时自动切换代数电流方程，避免 ODE 刚性
 function rk4Solve(blSpline, cmsSpline, pSI, freq, Vpeak, distance) {
   const w = 2 * Math.PI * freq;
-  const useAlgebraicI = pSI.Le < 1e-6;
+  // 当电感电抗远小于电阻时，用代数电流避免 ODE 刚性
+  const useAlgebraicI = (w * pSI.Le) < (pSI.Re * 0.1);
 
   const period = 1 / freq;
   const tau = pSI.Mms / pSI.Rms;
@@ -974,16 +975,11 @@ async function calcNonlinear() {
   statusEl.textContent = '计算中...';
   document.getElementById('nlCharts').style.display = 'flex';
 
-  // 频点范围：快速模式全频段，时域模式聚焦20-1000Hz（THD主要关注区）
-  const fMin = 20;
-  let nPts, fMax;
-  if (mode === 'timedomain') {
-    fMax = 1000;  // 时域仅算到1kHz，低频THD是关注重点
-    nPts = Math.min(150, parseInt(document.getElementById('fPoints').value) || 150);
-  } else {
-    fMax = Math.max(20, parseFloat(document.getElementById('fEnd').value) || 20000);
-    nPts = Math.min(200, parseInt(document.getElementById('fPoints').value) || 200);
-  }
+  // 非线性THD关注20-1000Hz区间
+  const fMin = 20, fMax = 1000;
+  const nPts = mode === 'timedomain'
+    ? Math.min(150, parseInt(document.getElementById('fPoints').value) || 150)
+    : Math.min(200, parseInt(document.getElementById('fPoints').value) || 200);
   const nlFreqs = new Float64Array(nPts);
   for (let i = 0; i < nPts; i++) {
     nlFreqs[i] = fMin * Math.pow(fMax / fMin, i / (nPts - 1));
