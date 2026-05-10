@@ -158,6 +158,7 @@ body {
       <div class="param-row"><label>Sd (mm²)</label><input id="sd" type="number" value="85" step="any"></div>
       <div class="param-row"><label>Xmax (mm)</label><input id="xmax" type="number" value="0.30" step="any"></div>
       <div class="param-row"><label>Vrms (V)</label><input id="vrms" type="number" value="1.0" step="any"></div>
+      <div class="param-row"><label>Vmax (V)</label><input id="vmax" type="number" value="2.2" step="any" title="最大输出电压，用于计算最大能力频响"></div>
       <div class="param-row"><label>距离 (m)</label><input id="distance" type="number" value="0.1" step="any"></div>
     </div>
 
@@ -772,12 +773,48 @@ function calcAll() {
   // 异步计算避免阻塞 UI
   setTimeout(() => {
     linearResult = calcLinearResponse(p, vrms, dist, freqs);
+
+    // 最大能力频响计算
+    const vmax = parseFloat(document.getElementById('vmax').value) || 2.2;
+    const maxSPL = new Float64Array(freqs.length);
+    const limitType = new Uint8Array(freqs.length); // 0=Vmax限, 1=Xmax限
+    let crossoverFreq = null;
+    for (let i = 0; i < freqs.length; i++) {
+      const dispPerV = linearResult.disp[i] / vrms; // mm/V at this freq
+      const vToXmax = (dispPerV > 1e-15) ? p.Xmax / dispPerV : 1e9;
+      if (vToXmax <= vmax) {
+        limitType[i] = 1; // Xmax-limited
+        maxSPL[i] = linearResult.spl[i] + 20 * Math.log10(vToXmax / vrms);
+      } else {
+        limitType[i] = 0; // Vmax-limited
+        maxSPL[i] = linearResult.spl[i] + 20 * Math.log10(vmax / vrms);
+      }
+    }
+    // 找交叉频率（Xmax限制→Vmax限制的过渡点）
+    for (let i = 1; i < limitType.length; i++) {
+      if (limitType[i-1] === 1 && limitType[i] === 0) {
+        crossoverFreq = freqs[i]; break;
+      }
+    }
+
+    const maxSPLpeak = maxSPL.reduce((a,b)=>Math.max(a,b),-Infinity);
     document.getElementById('linearStatus').textContent =
-      `完成 · 峰值 SPL: ${linearResult.spl.reduce((a,b)=>Math.max(a,b),-Infinity).toFixed(1)} dB @ ${dist}m`;
+      `完成 · 当前SPL峰值: ${linearResult.spl.reduce((a,b)=>Math.max(a,b),-Infinity).toFixed(1)} dB · 最大能力SPL峰值: ${maxSPLpeak.toFixed(1)} dB`;
 
     // 初始化图表
     if (!chartSPL) {
       chartSPL = createChart('chartSPL', 'SPL (dB)', '声压级 (dB)', '#61afef');
+      // 添加最大能力SPL曲线（dataset index 1）
+      chartSPL.data.datasets.push({
+        label: '最大能力 SPL',
+        data: [],
+        borderColor: '#e5c07b',
+        borderWidth: 2,
+        borderDash: [6, 4],
+        pointRadius: 0,
+        tension: 0.1,
+        fill: false
+      });
       chartDisp = createChart('chartDisp', '位移 (mm)', '位移 (mm)', '#e06c75');
       chartDisp.data.datasets.push({
         label: 'Xmax',
@@ -798,6 +835,7 @@ function calcAll() {
     chartDisp.options.scales.x.max = fMax;
 
     updateLineChart(chartSPL, freqArr, Array.from(linearResult.spl), 0);
+    updateLineChart(chartSPL, freqArr, Array.from(maxSPL), 1);
     updateLineChart(chartDisp, freqArr, Array.from(linearResult.disp), 0);
     const xmaxLine = new Array(freqs.length).fill(p.Xmax);
     updateLineChart(chartDisp, freqArr, xmaxLine, 1);
@@ -815,6 +853,10 @@ function calcAll() {
     if (xmaxCrossover) {
       document.getElementById('linearStatus').textContent +=
         ` · 位移超Xmax起始: ${xmaxCrossover.toFixed(0)} Hz`;
+    }
+    if (crossoverFreq) {
+      document.getElementById('linearStatus').textContent +=
+        ` · Xmax→Vmax过渡: ${crossoverFreq.toFixed(0)} Hz`;
     }
   }, 10);
 }
