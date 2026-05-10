@@ -31,17 +31,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | 线性计算 | `calcLinearResponse()` | 等效电路法频域求解，输出 `{spl, disp, imp}` 三个 Float64Array |
 | 最大能力频响 & EQ电压 | `calcAll()` 内联 | 逐频点：`V_to_Xmax = Xmax/(disp/Vrms)`，`V_limit = min(V_to_Xmax, Vmax)`。输出 `maxSPL`（最大能力 SPL 曲线）和 `eqVoltage`（EQ 电压曲线） |
 | 插值 | `AkimaSpline`, `SteffenSpline` | 一维保形样条，处理非对称 Bl(x)/Cms(x) |
-| 非线性-快速 | `describingFunction()` | 描述函数法：等效线性化迭代 30 轮 + 128 点数值积分提取 Bl(x) 谐波→估算 THD |
-| 非线性-精细 | `rk4Solve()` + `extractHarmonics()` | RK4 时域积分（200步/周期，4周期测量）→稳态 DFT 提取 H1-H5→THD |
+| 非线性-快速 | `describingFunction()` | 描述函数法等效线性化迭代（≤30轮）→ 扰动法 THD：合成时域力波形 F(t)=Bl(x)·i-k(x)·x → DFT 提取力谐波 F₁~F₅ → 通过 Zm(nω) 转为位移谐波 → THD |
+| 非线性-精细 | `rk4Solve()` + `extractHarmonics()` | RK4 时域积分（200步/周期，4周期稳态测量）→ DFT 提取位移谐波 H1-H5 → THD。200 频点，20Hz 起始 |
+| 拟合曲线 | `drawFittingChart()` | 在非线性面板绘制 Bl(x)/Cms(x) 样条拟合曲线 + 原始数据散点 |
 | 图表 | `createChart()`, `updateLineChart()` | Chart.js 封装，对数 X 轴，多数据集管理 |
 | 导出 | `exportCSV()`, `exportPNG(id)` | CSV 下载 (Freq/SPL/Disp)，PNG 截图 (canvas.toDataURL) |
 | UI | `calcAll()`, `calcNonlinear()`, `showNonlinearResults()` | 事件绑定，预置参数切换，进度反馈 |
 
-### 图表数据集结构（线性模式 3 图，非线性模式额外 3 图）
+### 图表数据集结构（线性模式 3 图，非线性模式额外 5 图）
 
 - **chartSPL**（2条线）：`[0]` 当前 SPL（蓝实线）、`[1]` 最大能力 SPL（黄虚线）
 - **chartDisp**（2条线）：`[0]` 峰值位移（红实线）、`[1]` Xmax 参考线（红虚线）
 - **chartEQ**（2条线）：`[0]` EQ 电压 Vrms（青实线）、`[1]` Vmax 参考线（青虚线）
+- **chartBlFit**（2条线）：`[0]` Bl(x) 样条拟合（红实线）、`[1]` 原始数据散点
+- **chartCmsFit**（2条线）：`[0]` Cms(x) 样条拟合（蓝实线）、`[1]` 原始数据散点
 - **chartNlSPL**（2条线）：`[0]` SPL 线性、`[1]` SPL 非线性
 - **chartNlDisp**（3条线）：`[0]` 位移线性、`[1]` 位移非线性、`[2]` Xmax
 - **chartTHD**（3条线）：`[0]` THD Total、`[1]` H2、`[2]` H3
@@ -57,7 +60,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   → 最大能力频响：逐频点 V_limit = min(V_to_Xmax, Vmax) → maxSPL + eqVoltage
   → Chart.js 渲染 SPL(含maxSPL叠加) + 位移(含Xmax线) + EQ电压(含Vmax线) 三图
   → (可选) 展开非线性面板 → 输入 Bl(x)/Cms(x) 数据表
-  → calcNonlinear() → describingFunction() 或 rk4Solve() → 三张对比图
+  → calcNonlinear() → drawFittingChart() 绘制拟合曲线 + 原始散点
+  → describingFunction() 或 rk4Solve() → SPL/位移对比 + THD 三图
   → (可选) exportCSV() / exportPNG() 导出数据
 ```
 
@@ -68,15 +72,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **单位约定**：输入 Cms(mm/N)、Mms(mg)、Sd(mm²)，内部全转 SI。位移输出为**峰值** mm（×√2），SPL 为 **RMS** dB，Vas 显示用 cm³
 - **EQ 电压**：达到最大能力 SPL 所需的 RMS 驱动电压。低频段 = Xmax/(disp_per_V)（随频率降低而升高，位移限制），高频段 = Vmax（电压限制）。曲线拐点即 Xmax→Vmax 过渡频率
 - **Akima 优于自然三次样条**：Bl(x)/Cms(x) 往往非均匀网格且非对称，Akima 局部性强不过冲
-- **THD 非对称判据**：Bl(x) 非对称 → H2 显著 ≠ 0；对称非线性 → H3 为主
+- **THD 计算（扰动法）**：描述函数收敛得 X₁,I₁ → 合成时域力波形 F(t)=Bl(x₁)·i₁-k(x₁)·x₁ → DFT 提取力谐波（256点，2/N 归一化）→ X_n = F_n/(nω·|Zm(nω)|) → THD = √(ΣX_n²)/X₁。Bl(x) 对称 → H2≈0,H3 主导；非对称 → H2 显著
 
 ## 设计决策
 
 - 非线性面板用折叠设计：保持单一工作流，线性/非线性对比一目了然
-- 时域求解默认 ≤80 频点、快速模式 ≤200 频点：平衡精度与浏览器 UI 响应
-- 预置参数需保持物理合理性（Qts 1-2，Fs 800-1200Hz，SPL₀ 75-85dB @ 1W/1m）
+- 时域求解和快速模式均为 200 频点，20Hz 固定起始：保证 THD 曲线低频分辨率
+- 预置参数需保持物理合理性（2110水滴 Fs≈240Hz 较软悬挂；1511/1813 为典型硬悬挂）
 - Vas 显示用 cm³：微扬声器 Vas 通常在 0.1-2 cm³ 量级
 - 最大能力 SPL 用黄色虚线叠加于 SPL 图：直观看到当前驱动与极限之间的裕量
 - EQ 电压单独成第三图（青色）：直观显示低频段需要多少电压增益才能推到 Xmax
+- Bl(x)/Cms(x) 拟合曲线 + 原始散点同框：直观验证插值质量
 - 默认预置 2110 水滴参数（Fs≈240Hz 较软悬挂微扬声器）
 - 导出 PNG 用 canvas.toDataURL 直接下载，不依赖额外库
