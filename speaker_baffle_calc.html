@@ -90,6 +90,7 @@ body {
 .chart-toggle { font-size: 0.73em; color: var(--text); cursor: pointer; display: flex; align-items: center; gap: 3px; }
 .chart-toggle input { accent-color: var(--accent); }
 .chart-wrap { margin-bottom: 4px; }
+.chart-wrap-hidden { height: 0; overflow: hidden; margin-bottom: 0; }
 .chart-export {
   display: flex; gap: 2px; justify-content: flex-end; margin-bottom: 2px;
 }
@@ -235,11 +236,11 @@ body {
       <div class="chart-export"><button onclick="exportCSV_chart('EQ')" title="导出CSV">📥</button><button onclick="exportPNG('chartEQ')" title="导出PNG">🖼</button></div>
       <div class="chart-container"><canvas id="chartEQ"></canvas></div>
     </div>
-    <div class="chart-wrap" id="wrapImp" style="display:none;">
+    <div class="chart-wrap chart-wrap-hidden" id="wrapImp">
       <div class="chart-export"><button onclick="exportCSV_chart('Imp')" title="导出CSV">📥</button><button onclick="exportPNG('chartImp')" title="导出PNG">🖼</button></div>
       <div class="chart-container"><canvas id="chartImp"></canvas></div>
     </div>
-    <div class="chart-wrap" id="wrapPhase" style="display:none;">
+    <div class="chart-wrap chart-wrap-hidden" id="wrapPhase">
       <div class="chart-export"><button onclick="exportCSV_chart('Phase')" title="导出CSV">📥</button><button onclick="exportPNG('chartPhase')" title="导出PNG">🖼</button></div>
       <div class="chart-container"><canvas id="chartPhase"></canvas></div>
     </div>
@@ -861,12 +862,11 @@ function calcAll() {
   const { freqs, fMin, fMax } = getFreqRange();
   currentFreqs = freqs;
 
-  // 异步计算避免阻塞 UI
-  setTimeout(() => {
-    linearResult = calcLinearResponse(p, vrms, dist, freqs);
+  // 同步计算（线性响应 <10ms，无需异步）
+  linearResult = calcLinearResponse(p, vrms, dist, freqs);
 
-    // 最大能力频响计算
-    const vmax = parseFloat(document.getElementById('vmax').value) || 2.2;
+  // 最大能力频响计算
+  const vmax = parseFloat(document.getElementById('vmax').value) || 2.2;
     const maxSPL = new Float64Array(freqs.length);
     const eqVoltage = new Float64Array(freqs.length); // 达到最大能力的RMS电压
     const limitType = new Uint8Array(freqs.length); // 0=Vmax限, 1=Xmax限
@@ -920,6 +920,8 @@ function calcAll() {
         fill: false
       });
       chartEQ = createChart('chartEQ', 'EQ电压 (Vrms)', '电压 (Vrms)', '#56b6c2');
+      chartImp = createChart('chartImp', '阻抗 (Ω)', '阻抗 (Ω)', '#c678dd');
+      chartPhase = createChart('chartPhase', '相位 (°)', '相位 (°)', '#d19a66');
     }
 
     // 阻抗 & 相位数据
@@ -937,7 +939,7 @@ function calcAll() {
 
     // 更新图表X轴范围
     const freqArr = Array.from(freqs);
-    [chartSPL, chartDisp, chartEQ].forEach(ch => {
+    [chartSPL, chartDisp, chartEQ, chartImp, chartPhase].forEach(ch => {
       ch.options.scales.x.min = fMin;
       ch.options.scales.x.max = fMax;
     });
@@ -963,19 +965,9 @@ function calcAll() {
     const vmaxLine = new Array(freqs.length).fill(vmax);
     updateLineChart(chartEQ, freqArr, vmaxLine, 1);
 
-    // 如果阻抗/相位图已创建（勾选过），更新数据
-    if (chartImp) {
-      updateLineChart(chartImp, freqArr, impData, 0);
-      chartImp.options.scales.x.min = fMin;
-      chartImp.options.scales.x.max = fMax;
-      chartImp.update('none');
-    }
-    if (chartPhase) {
-      updateLineChart(chartPhase, freqArr, Array.from(phaseData), 0);
-      chartPhase.options.scales.x.min = fMin;
-      chartPhase.options.scales.x.max = fMax;
-      chartPhase.update('none');
-    }
+    // 阻抗 & 相位图
+    updateLineChart(chartImp, freqArr, impData, 0);
+    updateLineChart(chartPhase, freqArr, Array.from(phaseData), 0);
 
     // 存储用于导出
     window._exportData = {
@@ -1002,7 +994,6 @@ function calcAll() {
       document.getElementById('linearStatus').textContent +=
         ` · Xmax→Vmax过渡: ${crossoverFreq.toFixed(0)} Hz`;
     }
-  }, 10);
 }
 
 // 非线性面板折叠
@@ -1395,35 +1386,19 @@ function exportPNG(chartId) {
   a.click();
 }
 
-// 图表显隐切换（懒加载：首次显示时延迟创建，等浏览器布局完成）
+// 图表显隐切换
 function toggleChart(type, cb) {
   const wrap = document.getElementById('wrap' + type);
   if (!wrap) return;
   if (cb.checked) {
-    wrap.style.display = '';
-    // 延迟创建图表，等浏览器完成 layout
-    setTimeout(() => {
-      if (type === 'Imp' && !chartImp) {
-        chartImp = createChart('chartImp', '阻抗 (Ω)', '阻抗 (Ω)', '#c678dd');
-        _loadChartData(chartImp, 'imp');
-      }
-      if (type === 'Phase' && !chartPhase) {
-        chartPhase = createChart('chartPhase', '相位 (°)', '相位 (°)', '#d19a66');
-        _loadChartData(chartPhase, 'phase');
-      }
-    }, 100);
+    wrap.classList.remove('chart-wrap-hidden');
+    // resize 确保图表尺寸正确
+    const chartMap = { SPL: chartSPL, Disp: chartDisp, EQ: chartEQ, Imp: chartImp, Phase: chartPhase };
+    const ch = chartMap[type];
+    if (ch) setTimeout(() => ch.resize(), 50);
   } else {
-    wrap.style.display = 'none';
+    wrap.classList.add('chart-wrap-hidden');
   }
-}
-
-function _loadChartData(chart, key) {
-  if (!window._exportData) return;
-  chart.data.labels = window._exportData.freqs;
-  chart.data.datasets[0].data = window._exportData[key];
-  chart.options.scales.x.min = window._exportData.freqs[0];
-  chart.options.scales.x.max = window._exportData.freqs[window._exportData.freqs.length - 1];
-  chart.update('none');
 }
 
 // 按图表导出CSV
