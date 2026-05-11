@@ -221,8 +221,8 @@ body {
       <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('SPL',this)">SPL</label>
       <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('Disp',this)">位移</label>
       <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('EQ',this)">EQ电压</label>
-      <label class="chart-toggle"><input type="checkbox" onchange="toggleChart('Imp',this)">阻抗</label>
-      <label class="chart-toggle"><input type="checkbox" onchange="toggleChart('Phase',this)">相位</label>
+      <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('Imp',this)">阻抗</label>
+      <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('Phase',this)">相位</label>
     </div>
     <div class="chart-wrap" id="wrapSPL">
       <div class="chart-export"><button onclick="exportCSV_chart('SPL')" title="导出CSV">📥</button><button onclick="exportPNG('chartSPL')" title="导出PNG">🖼</button></div>
@@ -236,11 +236,11 @@ body {
       <div class="chart-export"><button onclick="exportCSV_chart('EQ')" title="导出CSV">📥</button><button onclick="exportPNG('chartEQ')" title="导出PNG">🖼</button></div>
       <div class="chart-container"><canvas id="chartEQ"></canvas></div>
     </div>
-    <div class="chart-wrap chart-wrap-hidden" id="wrapImp">
+    <div class="chart-wrap" id="wrapImp">
       <div class="chart-export"><button onclick="exportCSV_chart('Imp')" title="导出CSV">📥</button><button onclick="exportPNG('chartImp')" title="导出PNG">🖼</button></div>
       <div class="chart-container"><canvas id="chartImp"></canvas></div>
     </div>
-    <div class="chart-wrap chart-wrap-hidden" id="wrapPhase">
+    <div class="chart-wrap" id="wrapPhase">
       <div class="chart-export"><button onclick="exportCSV_chart('Phase')" title="导出CSV">📥</button><button onclick="exportPNG('chartPhase')" title="导出PNG">🖼</button></div>
       <div class="chart-container"><canvas id="chartPhase"></canvas></div>
     </div>
@@ -925,6 +925,7 @@ function calcAll() {
     }
 
     // 阻抗 & 相位数据
+    const impData = Array.from(linearResult.imp);
     const phaseData = new Float64Array(freqs.length);
     {
       const pSI2 = toSI(p);
