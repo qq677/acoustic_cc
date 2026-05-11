@@ -137,6 +137,14 @@ body {
   border-radius: 4px; padding: 4px 8px; font-size: 0.8em;
 }
 .nl-status { font-size: 0.78em; color: var(--accent3); margin-top: 4px; }
+.nl-sub-section { border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-top: 12px; }
+.nl-sub-title { font-size: 0.82em; color: var(--accent); font-weight: 600; cursor: pointer; user-select: none; }
+.nl-sub-body { margin-top: 10px; }
+.time-domain-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.time-domain-charts .nl-chart-wrap { min-width: unset; height: 280px; }
+.freq-selector { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.freq-btn { font-size: 0.72em; padding: 3px 10px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); border-radius: 4px; cursor: pointer; }
+.freq-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
 .nl-charts { width: 100%; display: flex; gap: 12px; flex-wrap: wrap; }
 .nl-chart-wrap { flex: 1; min-width: 340px; height: 300px; position: relative; }
 
@@ -297,6 +305,28 @@ body {
       <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartNlDisp')" title="导出PNG">🖼</button> <button onclick="exportCSV_nl('Disp')" title="导出CSV">📥</button></div><canvas id="chartNlDisp"></canvas></div>
       <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartNlEQ')" title="导出PNG">🖼</button> <button onclick="exportCSV_nl('EQ')" title="导出CSV">📥</button></div><canvas id="chartNlEQ"></canvas></div>
       <div class="nl-chart-wrap" style="min-width:680px;"><div class="chart-export"><button onclick="exportPNG('chartTHD')" title="导出PNG">🖼</button> <button onclick="exportCSV_nl('THD')" title="导出CSV">📥</button></div><canvas id="chartTHD"></canvas></div>
+    </div>
+
+    <!-- 时域/FFT 波形分析 -->
+    <div class="nl-sub-section">
+      <div class="nl-sub-title" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">📊 时域波形 & FFT 分析（展开）</div>
+      <div class="nl-sub-body" style="display:none;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <label style="font-size:0.78em;color:var(--text);">频率点 (Hz, 逗号分隔):</label>
+          <input id="tdFreqs" type="text" value="100, 240, 500" style="background:var(--input-bg);color:var(--text-bright);border:1px solid var(--input-border);padding:4px 8px;border-radius:4px;width:180px;font-size:0.82em;">
+          <button class="btn btn-primary btn-sm" onclick="runTimeDomainAnalysis()">▶ 分析</button>
+          <span id="tdStatus" style="font-size:0.75em;color:var(--accent3);"></span>
+        </div>
+        <div class="freq-selector" id="tdFreqSelector" style="display:none;"></div>
+        <div class="time-domain-charts" id="tdCharts" style="display:none;margin-top:8px;">
+          <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartTDdisp')" title="导出PNG">🖼</button></div><canvas id="chartTDdisp"></canvas></div>
+          <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartTDvel')" title="导出PNG">🖼</button></div><canvas id="chartTDvel"></canvas></div>
+          <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartTDacc')" title="导出PNG">🖼</button></div><canvas id="chartTDacc"></canvas></div>
+          <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartFFTdisp')" title="导出PNG">🖼</button></div><canvas id="chartFFTdisp"></canvas></div>
+          <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartFFTvel')" title="导出PNG">🖼</button></div><canvas id="chartFFTvel"></canvas></div>
+          <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartFFTacc')" title="导出PNG">🖼</button></div><canvas id="chartFFTacc"></canvas></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -1497,6 +1527,170 @@ function exportCSV_nl(type) {
   const a = document.createElement('a');
   a.href = url; a.download = `speaker_nl_${type}.csv`; a.click();
   URL.revokeObjectURL(url);
+}
+
+// ========== 时域/FFT 波形分析 ==========
+let tdResults = {}; // { freq: { lin:{t,x,v,a}, nl:{t,x,v,a}, fft_lin:{hx,hv,ha}, fft_nl:{hx,hv,ha} } }
+let tdActiveFreq = null;
+
+async function runTimeDomainAnalysis() {
+  const p = getParams(), pSI = toSI(p);
+  const vrms = parseFloat(document.getElementById('vrms').value) || 0.4;
+  const dist = parseFloat(document.getElementById('distance').value) || 0.03;
+  const raw = document.getElementById('tdFreqs').value;
+  const freqs = raw.split(/[,;，；\s]+/).map(Number).filter(f => f >= 5 && f <= 20000);
+  if (freqs.length === 0) { alert('请输入有效频率 (5-20000 Hz)'); return; }
+
+  // 构建 Bl/Cms 插值器
+  const blParsed = parseDataTable(document.getElementById('blData').value);
+  const cmsParsed = parseDataTable(document.getElementById('cmsData').value);
+  if (!blParsed || !cmsParsed) { alert('请先输入有效的 Bl(x)/Cms(x) 数据'); return; }
+  const interpType = document.getElementById('nlInterp').value;
+  let blSpline, cmsSpline;
+  try {
+    blSpline = interpType === 'akima' ? new AkimaSpline(blParsed.x, blParsed.y) : new SteffenSpline(blParsed.x, blParsed.y);
+    cmsSpline = interpType === 'akima' ? new AkimaSpline(cmsParsed.x, cmsParsed.y) : new SteffenSpline(cmsParsed.x, cmsParsed.y);
+  } catch(e) { alert('插值器构建失败: '+e.message); return; }
+
+  const statusEl = document.getElementById('tdStatus');
+  statusEl.textContent = '计算中...';
+  document.getElementById('tdCharts').style.display = 'none';
+
+  await new Promise(r => setTimeout(r, 30));
+  tdResults = {};
+
+  for (const freq of freqs) {
+    const w = 2 * Math.PI * freq, Vpeak = vrms * Math.SQRT2;
+    // === 线性解析解 ===
+    const Zm = new Complex(pSI.Rms, w * pSI.Mms - 1 / (w * pSI.Cms));
+    const Zin = new Complex(pSI.Re, w * pSI.Le).add(new Complex(pSI.Bl * pSI.Bl, 0).div(Zm));
+    const I1 = new Complex(Vpeak, 0).div(Zin);
+    const v1 = I1.mul(pSI.Bl).div(Zm);
+    const X_lin = v1.abs() / w;
+    const phi_v = v1.arg();
+    // x(t)=X·sin(ωt+φ_v), v(t)=ωX·cos(ωt+φ_v), a(t)=-ω²X·sin(ωt+φ_v)
+
+    // === 非线性 RK4 时域波形 ===
+    const stepsPerCycle = 256, nCycles = 6, nMeasure = 2;
+    const dt = 1 / (freq * stepsPerCycle);
+    const nSettleSteps = (nCycles - nMeasure) * stepsPerCycle;
+    const nMeasureSteps = nMeasure * stepsPerCycle;
+    const useAlg = (w * pSI.Le) < (pSI.Re * 0.1);
+
+    function evalP(x) { const xmm=x*1000; return {bl:blSpline.eval(xmm), k:1/Math.max(cmsSpline.eval(xmm)/1000,1e-9)}; }
+    let x=0, v=0, i=0, t=0;
+    if (useAlg) {
+      function d2(x,v,t){const p=evalP(x);const iN=(Vpeak*Math.cos(w*t)-p.bl*v)/pSI.Re;return[v,(p.bl*iN-pSI.Rms*v-p.k*x)/pSI.Mms];}
+      for(let s=0;s<nSettleSteps;s++){const[a1,b1]=d2(x,v,t);const[a2,b2]=d2(x+0.5*dt*a1,v+0.5*dt*b1,t+0.5*dt);const[a3,b3]=d2(x+0.5*dt*a2,v+0.5*dt*b2,t+0.5*dt);const[a4,b4]=d2(x+dt*a3,v+dt*b3,t+dt);x+=dt/6*(a1+2*a2+2*a3+a4);v+=dt/6*(b1+2*b2+2*b3+b4);t+=dt;}
+    } else {
+      function d3(x,v,i,t){const p=evalP(x);const Vt=Vpeak*Math.cos(w*t);return[v,(p.bl*i-pSI.Rms*v-p.k*x)/pSI.Mms,(Vt-pSI.Re*i-p.bl*v)/pSI.Le];}
+      for(let s=0;s<nSettleSteps;s++){const[a1,b1,c1]=d3(x,v,i,t);const[a2,b2,c2]=d3(x+0.5*dt*a1,v+0.5*dt*b1,i+0.5*dt*c1,t+0.5*dt);const[a3,b3,c3]=d3(x+0.5*dt*a2,v+0.5*dt*b2,i+0.5*dt*c2,t+0.5*dt);const[a4,b4,c4]=d3(x+dt*a3,v+dt*b3,i+dt*c3,t+dt);x+=dt/6*(a1+2*a2+2*a3+a4);v+=dt/6*(b1+2*b2+2*b3+b4);i+=dt/6*(c1+2*c2+2*c3+c4);t+=dt;}
+    }
+    // 采集测量数据
+    const tArr=[], xArr=[], vArr=[], aArr=[];
+    if (useAlg) {
+      function d2(x,v,t){const p=evalP(x);const iN=(Vpeak*Math.cos(w*t)-p.bl*v)/pSI.Re;return[v,(p.bl*iN-pSI.Rms*v-p.k*x)/pSI.Mms];}
+      for(let s=0;s<nMeasureSteps;s++){const[a1,b1]=d2(x,v,t);const[a2,b2]=d2(x+0.5*dt*a1,v+0.5*dt*b1,t+0.5*dt);const[a3,b3]=d2(x+0.5*dt*a2,v+0.5*dt*b2,t+0.5*dt);const[a4,b4]=d2(x+dt*a3,v+dt*b3,t+dt);x+=dt/6*(a1+2*a2+2*a3+a4);v+=dt/6*(b1+2*b2+2*b3+b4);t+=dt;tArr.push(t*1000);xArr.push(x*1000);vArr.push(v);const pE=evalP(x);const iN=(Vpeak*Math.cos(w*t)-pE.bl*v)/pSI.Re;aArr.push((pE.bl*iN-pSI.Rms*v-pE.k*x)/pSI.Mms/1000);}
+    } else {
+      function d3(x,v,i,t){const p=evalP(x);const Vt=Vpeak*Math.cos(w*t);return[v,(p.bl*i-pSI.Rms*v-p.k*x)/pSI.Mms,(Vt-pSI.Re*i-p.bl*v)/pSI.Le];}
+      for(let s=0;s<nMeasureSteps;s++){const[a1,b1,c1]=d3(x,v,i,t);const[a2,b2,c2]=d3(x+0.5*dt*a1,v+0.5*dt*b1,i+0.5*dt*c1,t+0.5*dt);const[a3,b3,c3]=d3(x+0.5*dt*a2,v+0.5*dt*b2,i+0.5*dt*c2,t+0.5*dt);const[a4,b4,c4]=d3(x+dt*a3,v+dt*b3,i+dt*c3,t+dt);x+=dt/6*(a1+2*a2+2*a3+a4);v+=dt/6*(b1+2*b2+2*b3+b4);i+=dt/6*(c1+2*c2+2*c3+c4);t+=dt;tArr.push(t*1000);xArr.push(x*1000);vArr.push(v);const pE=evalP(x);aArr.push((pE.bl*i-pSI.Rms*v-pE.k*x)/pSI.Mms/1000);}
+    }
+
+    // 线性时域（相同时间点）
+    const tLin=[], xLin=[], vLin=[], aLin=[];
+    for(let s=0;s<nMeasureSteps;s++){const ts=(nSettleSteps+s+1)*dt*1000;tLin.push(ts);const wt=w*ts/1000;xLin.push(X_lin*1000*Math.sin(wt+phi_v));vLin.push(w*X_lin*Math.cos(wt+phi_v));aLin.push(-w*w*X_lin*Math.sin(wt+phi_v)/1000);}
+
+    // FFT 提取 (H1-H10)
+    function doFFT(sig, tSig) {const N=sig.length;const h=[];for(let n=1;n<=10;n++){let an=0,bn=0;for(let j=0;j<N;j++){const wt=w*tSig[j]/1000;an+=sig[j]*Math.cos(n*wt);bn+=sig[j]*Math.sin(n*wt);}h.push(Math.sqrt(an*an+bn*bn)*2/N);}return h;}
+    const fftNl={hx:doFFT(xArr,tArr), hv:doFFT(vArr,tArr), ha:doFFT(aArr,tArr)};
+    const fftLin={hx:doFFT(xLin,tLin), hv:doFFT(vLin,tLin), ha:doFFT(aLin,tLin)};
+
+    tdResults[freq] = {
+      lin: { t: tLin, x: xLin, v: vLin, a: aLin },
+      nl:  { t: tArr, x: xArr, v: vArr, a: aArr },
+      fftLin, fftNl
+    };
+    statusEl.textContent = `计算中... ${Object.keys(tdResults).length}/${freqs.length}`;
+    await new Promise(r => setTimeout(r, 5));
+  }
+
+  // 显示频率选择器
+  const sel = document.getElementById('tdFreqSelector');
+  sel.style.display = 'flex';
+  sel.innerHTML = Object.keys(tdResults).map(f =>
+    `<button class="freq-btn${tdActiveFreq==f?' active':''}" onclick="showTDCharts(${f})">${f} Hz</button>`
+  ).join('');
+
+  statusEl.textContent = `完成 · ${freqs.length} 个频点`;
+  if (!tdActiveFreq || !tdResults[tdActiveFreq]) tdActiveFreq = freqs[0];
+  showTDCharts(tdActiveFreq);
+}
+
+function showTDCharts(freq) {
+  tdActiveFreq = freq;
+  const res = tdResults[freq];
+  if (!res) return;
+  document.getElementById('tdCharts').style.display = 'grid';
+  // 更新频率选择按钮
+  document.querySelectorAll('.freq-btn').forEach(b => b.classList.toggle('active', b.textContent.trim() === freq+' Hz'));
+
+  const colors = { lin: '#61afef', nl: '#e06c75' };
+  const mkTD = (id, yLabel, linY, nlY) => drawTDChart(id, '时间 (ms)', yLabel, res.lin.t, linY, nlY, colors);
+  const mkFFT = (id, yLabel, linH, nlH) => drawFFTChart(id, '谐波阶次', yLabel, linH, nlH, colors);
+
+  mkTD('chartTDdisp', '位移 (mm)', res.lin.x, res.nl.x);
+  mkTD('chartTDvel', '速度 (m/s)', res.lin.v, res.nl.v);
+  mkTD('chartTDacc', '加速度 (km/s²)', res.lin.a, res.nl.a);
+  mkFFT('chartFFTdisp', '位移幅值 (mm)', res.fftLin.hx, res.fftNl.hx);
+  mkFFT('chartFFTvel', '速度幅值 (m/s)', res.fftLin.hv, res.fftNl.hv);
+  mkFFT('chartFFTacc', '加速度幅值 (km/s²)', res.fftLin.ha, res.fftNl.ha);
+}
+
+function drawTDChart(canvasId, xLabel, yLabel, t, linY, nlY, colors) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  const existing = Chart.getChart(canvasId); if (existing) existing.destroy();
+  return new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: t.map(v => v.toFixed(3)),
+      datasets: [
+        { label: '线性', data: linY, borderColor: colors.lin, borderWidth: 1.5, pointRadius: 0, tension: 0.2 },
+        { label: '非线性', data: nlY, borderColor: colors.nl, borderWidth: 1.5, pointRadius: 0, tension: 0.2 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: { title: { display: true, text: xLabel, color: '#abb2bf' }, ticks: { color: '#666', maxTicksLimit: 8 }, grid: { color: '#2c313a' } },
+        y: { title: { display: true, text: yLabel, color: '#abb2bf' }, ticks: { color: '#666' }, grid: { color: '#2c313a' } }
+      },
+      plugins: { legend: { labels: { color: '#abb2bf', font: { size: 10 } } } }
+    }
+  });
+}
+
+function drawFFTChart(canvasId, xLabel, yLabel, linH, nlH, colors) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  const existing = Chart.getChart(canvasId); if (existing) existing.destroy();
+  const labels = linH.map((_, i) => 'H' + (i + 1));
+  return new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: '线性', data: linH, backgroundColor: colors.lin + '88', borderColor: colors.lin, borderWidth: 1 },
+        { label: '非线性', data: nlH, backgroundColor: colors.nl + '88', borderColor: colors.nl, borderWidth: 1 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: { title: { display: true, text: xLabel, color: '#abb2bf' }, ticks: { color: '#666' }, grid: { color: '#2c313a' } },
+        y: { title: { display: true, text: yLabel, color: '#abb2bf' }, ticks: { color: '#666' }, grid: { color: '#2c313a' } }
+      },
+      plugins: { legend: { labels: { color: '#abb2bf', font: { size: 10 } } } }
+    }
+  });
 }
 
 // 预置参数
