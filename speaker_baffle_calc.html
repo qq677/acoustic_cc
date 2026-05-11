@@ -196,12 +196,6 @@ body {
 
     <button class="btn btn-primary" onclick="calcAll()">▶ 计算线性响应</button>
 
-    <div style="display:flex;gap:6px;margin-top:-6px;">
-      <button class="btn btn-outline btn-sm" onclick="exportCSV()" style="flex:1;">📥 导出 CSV</button>
-      <button class="btn btn-outline btn-sm" onclick="exportPNG('chartSPL')" style="flex:1;">🖼 SPL图PNG</button>
-      <button class="btn btn-outline btn-sm" onclick="exportPNG('chartDisp')" style="flex:1;">🖼 位移图PNG</button>
-    </div>
-
     <div class="derived-params" id="derivedParams" style="display:none;">
       <div>Fs <span id="dp_fs">--</span> Hz</div>
       <div>Qts <span id="dp_qts">--</span></div>
@@ -217,12 +211,18 @@ body {
   <!-- 右侧图表区 -->
   <div class="right-panel" id="rightPanel">
     <div class="chart-toolbar">
-      <span class="chart-toolbar-title">显示图表:</span>
+      <span class="chart-toolbar-title">显示:</span>
       <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('SPL',this)">SPL</label>
       <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('Disp',this)">位移</label>
-      <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('EQ',this)">EQ电压</label>
+      <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('EQ',this)">EQ</label>
       <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('Imp',this)">阻抗</label>
       <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('Phase',this)">相位</label>
+      <span style="color:#444;margin:0 4px;">|</span>
+      <span class="chart-toolbar-title">X轴:</span>
+      <label class="chart-toggle"><input type="radio" name="xaxis" checked onchange="setXAxis('log')">对数</label>
+      <label class="chart-toggle"><input type="radio" name="xaxis" onchange="setXAxis('linear')">线性</label>
+      <span style="color:#444;margin:0 4px;">|</span>
+      <label class="chart-toggle"><input type="checkbox" onchange="setPhaseWrap(this)">卷曲相位</label>
     </div>
     <div class="chart-wrap" id="wrapSPL">
       <div class="chart-export"><button onclick="exportCSV_chart('SPL')" title="导出CSV">📥</button><button onclick="exportPNG('chartSPL')" title="导出PNG">🖼</button></div>
@@ -922,19 +922,34 @@ function calcAll() {
       chartEQ = createChart('chartEQ', 'EQ电压 (Vrms)', '电压 (Vrms)', '#56b6c2');
       chartImp = createChart('chartImp', '阻抗 (Ω)', '阻抗 (Ω)', '#c678dd');
       chartPhase = createChart('chartPhase', '相位 (°)', '相位 (°)', '#d19a66');
+      // 应用当前X轴类型
+      if (xAxisType === 'linear') {
+        [chartSPL,chartDisp,chartEQ,chartImp,chartPhase].forEach(ch => {
+          ch.options.scales.x.type = 'linear';
+          ch.options.scales.x.ticks.callback = undefined;
+        });
+      }
     }
 
     // 阻抗 & 相位数据
     const impData = Array.from(linearResult.imp);
-    const phaseData = new Float64Array(freqs.length);
+    const phaseData = new Float64Array(freqs.length);      // 卷曲 [-180,180]
+    const phaseUnwrapped = new Float64Array(freqs.length); // 非卷曲（连续）
     {
       const pSI2 = toSI(p);
+      let unwrapOffset = 0, prevPhase = 0;
       for (let i = 0; i < freqs.length; i++) {
         const w = 2 * Math.PI * freqs[i];
         const Ze = new Complex(pSI2.Re, w * pSI2.Le);
         const Zm = new Complex(pSI2.Rms, w * pSI2.Mms - 1 / (w * pSI2.Cms));
         const Zin = Ze.add(new Complex(pSI2.Bl * pSI2.Bl, 0).div(Zm));
-        phaseData[i] = Math.atan2(Zin.im, Zin.re) * 180 / Math.PI;
+        const raw = Math.atan2(Zin.im, Zin.re) * 180 / Math.PI;
+        phaseData[i] = raw;
+        // 解卷曲：检测 >180° 跳变
+        if (i > 0 && raw - prevPhase > 180) unwrapOffset -= 360;
+        if (i > 0 && prevPhase - raw > 180) unwrapOffset += 360;
+        phaseUnwrapped[i] = raw + unwrapOffset;
+        prevPhase = raw;
       }
     }
 
@@ -966,16 +981,18 @@ function calcAll() {
     const vmaxLine = new Array(freqs.length).fill(vmax);
     updateLineChart(chartEQ, freqArr, vmaxLine, 1);
 
-    // 阻抗 & 相位图
+    // 阻抗 & 相位图（相位默认非卷曲）
     updateLineChart(chartImp, freqArr, impData, 0);
-    updateLineChart(chartPhase, freqArr, Array.from(phaseData), 0);
+    updateLineChart(chartPhase, freqArr, Array.from(phaseUnwrapped), 0);
 
     // 存储用于导出
     window._exportData = {
       freqs: freqArr, spl: Array.from(linearResult.spl), maxSPL: Array.from(maxSPL),
       disp: Array.from(linearResult.disp), eqVoltage: Array.from(eqVoltage),
-      imp: impData, phase: Array.from(phaseData)
+      imp: impData, phase: Array.from(phaseData), phaseUnwrapped: Array.from(phaseUnwrapped)
     };
+    // 应用当前相位卷曲模式
+    refreshPhaseChart();
 
     const xmaxVal = p.Xmax;
     let xmaxCrossover = null;
@@ -1385,6 +1402,38 @@ function exportPNG(chartId) {
   a.href = canvas.toDataURL('image/png');
   a.download = chartId + '.png';
   a.click();
+}
+
+// X轴类型切换（对数/线性）
+let xAxisType = 'logarithmic';
+function setXAxis(type) {
+  xAxisType = type;
+  const allCharts = [chartSPL, chartDisp, chartEQ, chartImp, chartPhase,
+                     chartNlSPL, chartNlDisp, chartNlEQ, chartTHD];
+  allCharts.forEach(ch => {
+    if (!ch) return;
+    ch.options.scales.x.type = type;
+    if (type === 'logarithmic') {
+      ch.options.scales.x.ticks.callback = v => v >= 1000 ? (v/1000)+'k' : v;
+    } else {
+      ch.options.scales.x.ticks.callback = undefined;
+    }
+    ch.update('none');
+  });
+}
+
+// 相位卷曲切换
+let phaseWrapped = false;
+function setPhaseWrap(cb) {
+  phaseWrapped = cb.checked;
+  refreshPhaseChart();
+}
+function refreshPhaseChart() {
+  if (!chartPhase || !window._exportData) return;
+  const ed = window._exportData;
+  const data = phaseWrapped ? ed.phase : ed.phaseUnwrapped;
+  updateLineChart(chartPhase, ed.freqs, data, 0);
+  chartPhase.update('none');
 }
 
 // 图表显隐切换
