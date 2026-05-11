@@ -392,13 +392,24 @@ body::before {
           <span id="tdStatus" style="font-size:0.75em;color:var(--accent3);"></span>
         </div>
         <div class="freq-selector" id="tdFreqSelector" style="display:none;"></div>
-        <div class="time-domain-charts" id="tdCharts" style="display:none;margin-top:8px;">
-          <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartTDdisp')" title="导出PNG">🖼</button></div><canvas id="chartTDdisp"></canvas></div>
-          <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartTDvel')" title="导出PNG">🖼</button></div><canvas id="chartTDvel"></canvas></div>
-          <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartTDacc')" title="导出PNG">🖼</button></div><canvas id="chartTDacc"></canvas></div>
-          <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartFFTdisp')" title="导出PNG">🖼</button></div><canvas id="chartFFTdisp"></canvas></div>
-          <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartFFTvel')" title="导出PNG">🖼</button></div><canvas id="chartFFTvel"></canvas></div>
-          <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartFFTacc')" title="导出PNG">🖼</button></div><canvas id="chartFFTacc"></canvas></div>
+        <div id="tdCharts" style="display:none;margin-top:8px;">
+          <div class="freq-selector" style="margin-bottom:6px;">
+            <button class="freq-btn active" onclick="switchTDView('disp')">位移</button>
+            <button class="freq-btn" onclick="switchTDView('vel')">速度</button>
+            <button class="freq-btn" onclick="switchTDView('acc')">加速度</button>
+          </div>
+          <div class="time-domain-charts" id="tdViewDisp">
+            <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartTDdisp')" title="导出PNG">🖼</button></div><canvas id="chartTDdisp"></canvas></div>
+            <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartFFTdisp')" title="导出PNG">🖼</button></div><canvas id="chartFFTdisp"></canvas></div>
+          </div>
+          <div class="time-domain-charts" id="tdViewVel" style="display:none;">
+            <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartTDvel')" title="导出PNG">🖼</button></div><canvas id="chartTDvel"></canvas></div>
+            <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartFFTvel')" title="导出PNG">🖼</button></div><canvas id="chartFFTvel"></canvas></div>
+          </div>
+          <div class="time-domain-charts" id="tdViewAcc" style="display:none;">
+            <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartTDacc')" title="导出PNG">🖼</button></div><canvas id="chartTDacc"></canvas></div>
+            <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartFFTacc')" title="导出PNG">🖼</button></div><canvas id="chartFFTacc"></canvas></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1606,6 +1617,18 @@ function exportCSV_nl(type) {
 // ========== 时域/FFT 波形分析 ==========
 let tdResults = {}; // { freq: { lin:{t,x,v,a}, nl:{t,x,v,a}, fft_lin:{hx,hv,ha}, fft_nl:{hx,hv,ha} } }
 let tdActiveFreq = null;
+let tdActiveView = 'disp'; // disp | vel | acc
+
+function switchTDView(view) {
+  tdActiveView = view;
+  ['disp','vel','acc'].forEach(v => {
+    document.getElementById('tdView'+v.charAt(0).toUpperCase()+v.slice(1)).style.display = v === view ? '' : 'none';
+  });
+  // 更新按钮状态
+  const btns = document.querySelectorAll('#tdCharts .freq-selector .freq-btn');
+  btns.forEach((b,i) => b.classList.toggle('active', (i===0&&view==='disp')||(i===1&&view==='vel')||(i===2&&view==='acc')));
+  if (tdActiveFreq && tdResults[tdActiveFreq]) showTDCharts(tdActiveFreq);
+}
 
 async function runTimeDomainAnalysis() {
   const p = getParams(), pSI = toSI(p);
@@ -1704,20 +1727,24 @@ function showTDCharts(freq) {
   tdActiveFreq = freq;
   const res = tdResults[freq];
   if (!res) return;
-  document.getElementById('tdCharts').style.display = 'grid';
+  document.getElementById('tdCharts').style.display = '';
   // 更新频率选择按钮
-  document.querySelectorAll('.freq-btn').forEach(b => b.classList.toggle('active', b.textContent.trim() === freq+' Hz'));
+  document.querySelectorAll('#tdFreqSelector .freq-btn').forEach(b => b.classList.toggle('active', b.textContent.trim() === freq+' Hz'));
 
   const colors = { lin: '#61afef', nl: '#e06c75' };
-  const mkTD = (id, yLabel, linY, nlY) => drawTDChart(id, '时间 (ms)', yLabel, res.lin.t, linY, nlY, colors);
-  const mkFFT = (id, yLabel, linH, nlH) => drawFFTChart(id, '谐波阶次', yLabel, linH, nlH, colors);
-
-  mkTD('chartTDdisp', '位移 (mm)', res.lin.x, res.nl.x);
-  mkTD('chartTDvel', '速度 (m/s)', res.lin.v, res.nl.v);
-  mkTD('chartTDacc', '加速度 (km/s²)', res.lin.a, res.nl.a);
-  mkFFT('chartFFTdisp', '位移幅值 (mm)', res.fftLin.hx, res.fftNl.hx);
-  mkFFT('chartFFTvel', '速度幅值 (m/s)', res.fftLin.hv, res.fftNl.hv);
-  mkFFT('chartFFTacc', '加速度幅值 (km/s²)', res.fftLin.ha, res.fftNl.ha);
+  const views = {
+    disp: { tdId: 'chartTDdisp', fftId: 'chartFFTdisp', tdY: '位移 (mm)', fftY: '位移幅值 (mm)', linT: res.lin.x, nlT: res.nl.x, linF: res.fftLin.hx, nlF: res.fftNl.hx },
+    vel:  { tdId: 'chartTDvel',  fftId: 'chartFFTvel',  tdY: '速度 (m/s)', fftY: '速度幅值 (m/s)', linT: res.lin.v, nlT: res.nl.v, linF: res.fftLin.hv, nlF: res.fftNl.hv },
+    acc:  { tdId: 'chartTDacc',  fftId: 'chartFFTacc',  tdY: '加速度 (km/s²)', fftY: '加速度幅值 (km/s²)', linT: res.lin.a, nlT: res.nl.a, linF: res.fftLin.ha, nlF: res.fftNl.ha }
+  };
+  const v = views[tdActiveView];
+  if (!v) return;
+  drawTDChart(v.tdId, '时间 (ms)', v.tdY, res.lin.t, v.linT, v.nlT, colors);
+  drawFFTChart(v.fftId, '谐波阶次', v.fftY, v.linF, v.nlF, colors);
+  // 显示当前视图、隐藏其他
+  document.getElementById('tdViewDisp').style.display = tdActiveView==='disp' ? '' : 'none';
+  document.getElementById('tdViewVel').style.display  = tdActiveView==='vel'  ? '' : 'none';
+  document.getElementById('tdViewAcc').style.display  = tdActiveView==='acc'  ? '' : 'none';
 }
 
 function drawTDChart(canvasId, xLabel, yLabel, t, linY, nlY, colors) {
