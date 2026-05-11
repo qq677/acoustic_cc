@@ -166,8 +166,8 @@ body {
     <div class="section-title">TS 参数输入</div>
     <div class="param-grid">
       <div class="param-row"><label>Re (Ω)</label><input id="re" type="number" value="6.8" step="any"></div>
-      <div class="param-row"><label>Ze (Ω)</label><input id="ze" type="number" value="7.0" step="any" title="1kHz处交流阻抗，用于自动计算Le"></div>
-      <div class="param-row"><label>Le (μH)</label><input id="le" type="number" value="28" step="any"></div>
+      <div class="param-row"><label>Ze (Ω)</label><input id="ze" type="number" value="6.8" step="any" title="1kHz处交流阻抗，若Ze>Re则自动推算Le"></div>
+      <div class="param-row"><label>Le (μH)</label><input id="le" type="number" value="30" step="any"></div>
       <div class="param-row"><label>Bl (T·m)</label><input id="bl" type="number" value="0.55" step="any"></div>
       <div class="param-row"><label>Cms (mm/N)</label><input id="cms" type="number" value="6.3" step="any"></div>
       <div class="param-row"><label>Mms (mg)</label><input id="mms" type="number" value="70" step="any"></div>
@@ -327,7 +327,7 @@ class Complex {
 function getParams() {
   const Re = parseFloat(document.getElementById('re').value) || 6.8;
   const ZeVal = parseFloat(document.getElementById('ze').value);
-  let Le = parseFloat(document.getElementById('le').value) || 28;
+  let Le = parseFloat(document.getElementById('le').value) || 30;
   // 如果输入了 Ze 且 Ze>Re，自动从 Ze 推算 Le (@1kHz)
   if (ZeVal && ZeVal > Re && !isNaN(ZeVal)) {
     const wRef = 2 * Math.PI * 1000;
@@ -1452,7 +1452,7 @@ function exportCSV_nl(type) {
 // 预置参数
 function loadPreset(type) {
   const presets = {
-    '2110': { re:6.8, le:28, bl:0.55, cms:6.3, mms:70, rms:0.06, sd:116, xmax:0.65 },
+    '2110': { re:6.8, le:30, bl:0.55, cms:6.3, mms:70, rms:0.06, sd:116, xmax:0.65 },
     '1511': { re:7.5, le:40, bl:1.10, cms:0.40, mms:55, rms:0.07, sd:85, xmax:0.30 },
     '1813': { re:4.0, le:20, bl:0.70, cms:0.55, mms:42, rms:0.05, sd:125, xmax:0.35 },
     'custom': { re:8.0, le:60, bl:0.90, cms:0.35, mms:65, rms:0.06, sd:95, xmax:0.40 },
