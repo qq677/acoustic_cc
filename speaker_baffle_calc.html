@@ -221,8 +221,6 @@ body {
       <span class="chart-toolbar-title">X轴:</span>
       <label class="chart-toggle"><input type="radio" name="xaxis" checked onchange="setXAxis('log')">对数</label>
       <label class="chart-toggle"><input type="radio" name="xaxis" onchange="setXAxis('linear')">线性</label>
-      <span style="color:#444;margin:0 4px;">|</span>
-      <label class="chart-toggle"><input type="checkbox" onchange="setPhaseWrap(this)">卷曲相位</label>
     </div>
     <div class="chart-wrap" id="wrapSPL">
       <div class="chart-export"><button onclick="exportCSV_chart('SPL')" title="导出CSV">📥</button><button onclick="exportPNG('chartSPL')" title="导出PNG">🖼</button></div>
@@ -241,7 +239,10 @@ body {
       <div class="chart-container"><canvas id="chartImp"></canvas></div>
     </div>
     <div class="chart-wrap" id="wrapPhase">
-      <div class="chart-export"><button onclick="exportCSV_chart('Phase')" title="导出CSV">📥</button><button onclick="exportPNG('chartPhase')" title="导出PNG">🖼</button></div>
+      <div class="chart-export">
+        <label class="chart-toggle" style="margin-right:8px;"><input type="checkbox" onchange="setPhaseWrap(this)">卷曲相位</label>
+        <button onclick="exportCSV_chart('Phase')" title="导出CSV">📥</button><button onclick="exportPNG('chartPhase')" title="导出PNG">🖼</button>
+      </div>
       <div class="chart-container"><canvas id="chartPhase"></canvas></div>
     </div>
   </div>
@@ -1418,7 +1419,7 @@ function setXAxis(type) {
     } else {
       ch.options.scales.x.ticks.callback = undefined;
     }
-    ch.update('none');
+    ch.update();
   });
 }
 
