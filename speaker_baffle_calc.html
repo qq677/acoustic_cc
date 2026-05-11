@@ -166,7 +166,6 @@ body {
     <div class="section-title">TS 参数输入</div>
     <div class="param-grid">
       <div class="param-row"><label>Re (Ω)</label><input id="re" type="number" value="6.8" step="any"></div>
-      <div class="param-row"><label>Ze (Ω)</label><input id="ze" type="number" value="6.8" step="any" title="1kHz处交流阻抗，若Ze>Re则自动推算Le"></div>
       <div class="param-row"><label>Le (μH)</label><input id="le" type="number" value="30" step="any"></div>
       <div class="param-row"><label>Bl (T·m)</label><input id="bl" type="number" value="0.55" step="any"></div>
       <div class="param-row"><label>Cms (mm/N)</label><input id="cms" type="number" value="6.3" step="any"></div>
@@ -325,18 +324,9 @@ class Complex {
 }
 
 function getParams() {
-  const Re = parseFloat(document.getElementById('re').value) || 6.8;
-  const ZeVal = parseFloat(document.getElementById('ze').value);
-  let Le = parseFloat(document.getElementById('le').value) || 30;
-  // 如果输入了 Ze 且 Ze>Re，自动从 Ze 推算 Le (@1kHz)
-  if (ZeVal && ZeVal > Re && !isNaN(ZeVal)) {
-    const wRef = 2 * Math.PI * 1000;
-    const LeCalc = Math.sqrt(Math.max(ZeVal * ZeVal - Re * Re, 0)) / wRef;
-    Le = LeCalc * 1e6; // H → μH
-    document.getElementById('le').value = Le.toFixed(1);
-  }
   return {
-    Re, Le,
+    Re: parseFloat(document.getElementById('re').value) || 6.8,
+    Le: parseFloat(document.getElementById('le').value) || 30,
     Bl: parseFloat(document.getElementById('bl').value) || 0.55,
     Cms: parseFloat(document.getElementById('cms').value) || 6.3,
     Mms: parseFloat(document.getElementById('mms').value) || 70,
@@ -930,8 +920,6 @@ function calcAll() {
         fill: false
       });
       chartEQ = createChart('chartEQ', 'EQ电压 (Vrms)', '电压 (Vrms)', '#56b6c2');
-      chartImp = createChart('chartImp', '阻抗 (Ω)', '阻抗 (Ω)', '#c678dd');
-      chartPhase = createChart('chartPhase', '相位 (°)', '相位 (°)', '#d19a66');
     }
 
     // 阻抗 & 相位数据
@@ -949,8 +937,7 @@ function calcAll() {
 
     // 更新图表X轴范围
     const freqArr = Array.from(freqs);
-    [chartSPL, chartDisp, chartEQ, chartImp, chartPhase].forEach(ch => {
-      if (!ch) return;
+    [chartSPL, chartDisp, chartEQ].forEach(ch => {
       ch.options.scales.x.min = fMin;
       ch.options.scales.x.max = fMax;
     });
@@ -975,8 +962,20 @@ function calcAll() {
     }
     const vmaxLine = new Array(freqs.length).fill(vmax);
     updateLineChart(chartEQ, freqArr, vmaxLine, 1);
-    updateLineChart(chartImp, freqArr, impData, 0);
-    updateLineChart(chartPhase, freqArr, Array.from(phaseData), 0);
+
+    // 如果阻抗/相位图已创建（勾选过），更新数据
+    if (chartImp) {
+      updateLineChart(chartImp, freqArr, impData, 0);
+      chartImp.options.scales.x.min = fMin;
+      chartImp.options.scales.x.max = fMax;
+      chartImp.update('none');
+    }
+    if (chartPhase) {
+      updateLineChart(chartPhase, freqArr, Array.from(phaseData), 0);
+      chartPhase.options.scales.x.min = fMin;
+      chartPhase.options.scales.x.max = fMax;
+      chartPhase.update('none');
+    }
 
     // 存储用于导出
     window._exportData = {
@@ -1396,10 +1395,34 @@ function exportPNG(chartId) {
   a.click();
 }
 
-// 图表显隐切换
+// 图表显隐切换（懒加载：首次显示时才创建图表）
 function toggleChart(type, cb) {
   const wrap = document.getElementById('wrap' + type);
-  if (wrap) wrap.style.display = cb.checked ? '' : 'none';
+  if (!wrap) return;
+  if (cb.checked) {
+    wrap.style.display = '';
+    // 懒加载阻抗/相位图
+    if (type === 'Imp' && !chartImp) {
+      chartImp = createChart('chartImp', '阻抗 (Ω)', '阻抗 (Ω)', '#c678dd');
+      if (window._exportData) {
+        updateLineChart(chartImp, window._exportData.freqs, window._exportData.imp, 0);
+        chartImp.options.scales.x.min = window._exportData.freqs[0];
+        chartImp.options.scales.x.max = window._exportData.freqs[window._exportData.freqs.length-1];
+        chartImp.update('none');
+      }
+    }
+    if (type === 'Phase' && !chartPhase) {
+      chartPhase = createChart('chartPhase', '相位 (°)', '相位 (°)', '#d19a66');
+      if (window._exportData) {
+        updateLineChart(chartPhase, window._exportData.freqs, window._exportData.phase, 0);
+        chartPhase.options.scales.x.min = window._exportData.freqs[0];
+        chartPhase.options.scales.x.max = window._exportData.freqs[window._exportData.freqs.length-1];
+        chartPhase.update('none');
+      }
+    }
+  } else {
+    wrap.style.display = 'none';
+  }
 }
 
 // 按图表导出CSV
