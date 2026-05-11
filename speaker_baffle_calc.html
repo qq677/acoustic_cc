@@ -82,8 +82,24 @@ body {
 }
 .derived-params span { color: var(--accent3); font-weight: 600; }
 
+.chart-toolbar {
+  display: flex; gap: 12px; align-items: center; padding: 6px 12px;
+  background: var(--input-bg); border-radius: 6px; margin-bottom: 8px; flex-wrap: wrap;
+}
+.chart-toolbar-title { font-size: 0.75em; color: var(--text); font-weight: 600; }
+.chart-toggle { font-size: 0.73em; color: var(--text); cursor: pointer; display: flex; align-items: center; gap: 3px; }
+.chart-toggle input { accent-color: var(--accent); }
+.chart-wrap { margin-bottom: 4px; }
+.chart-export {
+  display: flex; gap: 2px; justify-content: flex-end; margin-bottom: 2px;
+}
+.chart-export button {
+  background: var(--input-bg); border: 1px solid var(--input-border); color: var(--text);
+  cursor: pointer; font-size: 0.7em; padding: 2px 6px; border-radius: 3px;
+}
+.chart-export button:hover { border-color: var(--accent); color: var(--text-bright); }
 .chart-container {
-  flex: 1; position: relative; min-height: 250px; margin-bottom: 8px;
+  flex: 1; position: relative; min-height: 220px;
 }
 .chart-container canvas { width: 100% !important; height: 100% !important; }
 
@@ -150,7 +166,8 @@ body {
     <div class="section-title">TS 参数输入</div>
     <div class="param-grid">
       <div class="param-row"><label>Re (Ω)</label><input id="re" type="number" value="6.8" step="any"></div>
-      <div class="param-row"><label>Le (mH)</label><input id="le" type="number" value="0.03" step="any"></div>
+      <div class="param-row"><label>Ze (Ω)</label><input id="ze" type="number" value="7.0" step="any" title="1kHz处交流阻抗，用于自动计算Le"></div>
+      <div class="param-row"><label>Le (μH)</label><input id="le" type="number" value="28" step="any"></div>
       <div class="param-row"><label>Bl (T·m)</label><input id="bl" type="number" value="0.55" step="any"></div>
       <div class="param-row"><label>Cms (mm/N)</label><input id="cms" type="number" value="6.3" step="any"></div>
       <div class="param-row"><label>Mms (mg)</label><input id="mms" type="number" value="70" step="any"></div>
@@ -199,9 +216,34 @@ body {
 
   <!-- 右侧图表区 -->
   <div class="right-panel" id="rightPanel">
-    <div class="chart-container"><canvas id="chartSPL"></canvas></div>
-    <div class="chart-container"><canvas id="chartDisp"></canvas></div>
-    <div class="chart-container"><canvas id="chartEQ"></canvas></div>
+    <div class="chart-toolbar">
+      <span class="chart-toolbar-title">显示图表:</span>
+      <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('SPL',this)">SPL</label>
+      <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('Disp',this)">位移</label>
+      <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('EQ',this)">EQ电压</label>
+      <label class="chart-toggle"><input type="checkbox" onchange="toggleChart('Imp',this)">阻抗</label>
+      <label class="chart-toggle"><input type="checkbox" onchange="toggleChart('Phase',this)">相位</label>
+    </div>
+    <div class="chart-wrap" id="wrapSPL">
+      <div class="chart-export"><button onclick="exportCSV_chart('SPL')" title="导出CSV">📥</button><button onclick="exportPNG('chartSPL')" title="导出PNG">🖼</button></div>
+      <div class="chart-container"><canvas id="chartSPL"></canvas></div>
+    </div>
+    <div class="chart-wrap" id="wrapDisp">
+      <div class="chart-export"><button onclick="exportCSV_chart('Disp')" title="导出CSV">📥</button><button onclick="exportPNG('chartDisp')" title="导出PNG">🖼</button></div>
+      <div class="chart-container"><canvas id="chartDisp"></canvas></div>
+    </div>
+    <div class="chart-wrap" id="wrapEQ">
+      <div class="chart-export"><button onclick="exportCSV_chart('EQ')" title="导出CSV">📥</button><button onclick="exportPNG('chartEQ')" title="导出PNG">🖼</button></div>
+      <div class="chart-container"><canvas id="chartEQ"></canvas></div>
+    </div>
+    <div class="chart-wrap" id="wrapImp" style="display:none;">
+      <div class="chart-export"><button onclick="exportCSV_chart('Imp')" title="导出CSV">📥</button><button onclick="exportPNG('chartImp')" title="导出PNG">🖼</button></div>
+      <div class="chart-container"><canvas id="chartImp"></canvas></div>
+    </div>
+    <div class="chart-wrap" id="wrapPhase" style="display:none;">
+      <div class="chart-export"><button onclick="exportCSV_chart('Phase')" title="导出CSV">📥</button><button onclick="exportPNG('chartPhase')" title="导出PNG">🖼</button></div>
+      <div class="chart-container"><canvas id="chartPhase"></canvas></div>
+    </div>
   </div>
 </div>
 
@@ -248,12 +290,12 @@ body {
       </div>
     </div>
     <div class="nl-charts" id="nlCharts" style="display:none;">
-      <div class="nl-chart-wrap"><canvas id="chartBlFit"></canvas></div>
-      <div class="nl-chart-wrap"><canvas id="chartCmsFit"></canvas></div>
-      <div class="nl-chart-wrap"><canvas id="chartNlSPL"></canvas></div>
-      <div class="nl-chart-wrap"><canvas id="chartNlDisp"></canvas></div>
-      <div class="nl-chart-wrap"><canvas id="chartNlEQ"></canvas></div>
-      <div class="nl-chart-wrap" style="min-width:680px;"><canvas id="chartTHD"></canvas></div>
+      <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartBlFit')" title="导出PNG">🖼</button></div><canvas id="chartBlFit"></canvas></div>
+      <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartCmsFit')" title="导出PNG">🖼</button></div><canvas id="chartCmsFit"></canvas></div>
+      <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartNlSPL')" title="导出PNG">🖼</button> <button onclick="exportCSV_nl('SPL')" title="导出CSV">📥</button></div><canvas id="chartNlSPL"></canvas></div>
+      <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartNlDisp')" title="导出PNG">🖼</button> <button onclick="exportCSV_nl('Disp')" title="导出CSV">📥</button></div><canvas id="chartNlDisp"></canvas></div>
+      <div class="nl-chart-wrap"><div class="chart-export"><button onclick="exportPNG('chartNlEQ')" title="导出PNG">🖼</button> <button onclick="exportCSV_nl('EQ')" title="导出CSV">📥</button></div><canvas id="chartNlEQ"></canvas></div>
+      <div class="nl-chart-wrap" style="min-width:680px;"><div class="chart-export"><button onclick="exportPNG('chartTHD')" title="导出PNG">🖼</button> <button onclick="exportCSV_nl('THD')" title="导出CSV">📥</button></div><canvas id="chartTHD"></canvas></div>
     </div>
   </div>
 </div>
@@ -283,22 +325,31 @@ class Complex {
 }
 
 function getParams() {
+  const Re = parseFloat(document.getElementById('re').value) || 6.8;
+  const ZeVal = parseFloat(document.getElementById('ze').value);
+  let Le = parseFloat(document.getElementById('le').value) || 28;
+  // 如果输入了 Ze 且 Ze>Re，自动从 Ze 推算 Le (@1kHz)
+  if (ZeVal && ZeVal > Re && !isNaN(ZeVal)) {
+    const wRef = 2 * Math.PI * 1000;
+    const LeCalc = Math.sqrt(Math.max(ZeVal * ZeVal - Re * Re, 0)) / wRef;
+    Le = LeCalc * 1e6; // H → μH
+    document.getElementById('le').value = Le.toFixed(1);
+  }
   return {
-    Re: parseFloat(document.getElementById('re').value) || 8,
-    Le: parseFloat(document.getElementById('le').value) || 0.05,
-    Bl: parseFloat(document.getElementById('bl').value) || 0.6,
-    Cms: parseFloat(document.getElementById('cms').value) || 0.5,
-    Mms: parseFloat(document.getElementById('mms').value) || 80,
-    Rms: parseFloat(document.getElementById('rms').value) || 0.05,
-    Sd: parseFloat(document.getElementById('sd').value) || 90,
-    Xmax: parseFloat(document.getElementById('xmax').value) || 0.35,
+    Re, Le,
+    Bl: parseFloat(document.getElementById('bl').value) || 0.55,
+    Cms: parseFloat(document.getElementById('cms').value) || 6.3,
+    Mms: parseFloat(document.getElementById('mms').value) || 70,
+    Rms: parseFloat(document.getElementById('rms').value) || 0.06,
+    Sd: parseFloat(document.getElementById('sd').value) || 116,
+    Xmax: parseFloat(document.getElementById('xmax').value) || 0.65,
   };
 }
 
 function toSI(p) {
   return {
     Re: p.Re,
-    Le: p.Le / 1000,
+    Le: p.Le / 1_000_000,  // μH → H
     Bl: p.Bl,
     Cms: p.Cms / 1000,
     Mms: p.Mms / 1_000_000,
@@ -747,7 +798,7 @@ function getFreqRange() {
   return { freqs: arr, fMin, fMax, n };
 }
 
-let chartSPL = null, chartDisp = null, chartEQ = null;
+let chartSPL = null, chartDisp = null, chartEQ = null, chartImp = null, chartPhase = null;
 let chartNlSPL = null, chartNlDisp = null, chartNlEQ = null, chartTHD = null;
 let linearResult = null;
 let currentFreqs = null;
@@ -879,11 +930,27 @@ function calcAll() {
         fill: false
       });
       chartEQ = createChart('chartEQ', 'EQ电压 (Vrms)', '电压 (Vrms)', '#56b6c2');
+      chartImp = createChart('chartImp', '阻抗 (Ω)', '阻抗 (Ω)', '#c678dd');
+      chartPhase = createChart('chartPhase', '相位 (°)', '相位 (°)', '#d19a66');
+    }
+
+    // 阻抗 & 相位数据
+    const phaseData = new Float64Array(freqs.length);
+    {
+      const pSI2 = toSI(p);
+      for (let i = 0; i < freqs.length; i++) {
+        const w = 2 * Math.PI * freqs[i];
+        const Ze = new Complex(pSI2.Re, w * pSI2.Le);
+        const Zm = new Complex(pSI2.Rms, w * pSI2.Mms - 1 / (w * pSI2.Cms));
+        const Zin = Ze.add(new Complex(pSI2.Bl * pSI2.Bl, 0).div(Zm));
+        phaseData[i] = Math.atan2(Zin.im, Zin.re) * 180 / Math.PI;
+      }
     }
 
     // 更新图表X轴范围
     const freqArr = Array.from(freqs);
-    [chartSPL, chartDisp, chartEQ].forEach(ch => {
+    [chartSPL, chartDisp, chartEQ, chartImp, chartPhase].forEach(ch => {
+      if (!ch) return;
       ch.options.scales.x.min = fMin;
       ch.options.scales.x.max = fMax;
     });
@@ -908,6 +975,15 @@ function calcAll() {
     }
     const vmaxLine = new Array(freqs.length).fill(vmax);
     updateLineChart(chartEQ, freqArr, vmaxLine, 1);
+    updateLineChart(chartImp, freqArr, impData, 0);
+    updateLineChart(chartPhase, freqArr, Array.from(phaseData), 0);
+
+    // 存储用于导出
+    window._exportData = {
+      freqs: freqArr, spl: Array.from(linearResult.spl), maxSPL: Array.from(maxSPL),
+      disp: Array.from(linearResult.disp), eqVoltage: Array.from(eqVoltage),
+      imp: impData, phase: Array.from(phaseData)
+    };
 
     const xmaxVal = p.Xmax;
     let xmaxCrossover = null;
@@ -1221,6 +1297,17 @@ function showNonlinearResults(nlResult, nlFreqs, eqVNl, eqVLin) {
   chartTHD.data.datasets[2].data = Array.from(nlResult.thd3);
   updateX(chartTHD);
   chartTHD.update('none');
+
+  // 存储非线性导出数据
+  window._exportDataNl = {
+    freqs: freqArr,
+    splLin: Array.from(linSplInterp), splNl: Array.from(nlResult.spl),
+    dispLin: Array.from(linDispInterp), dispNl: Array.from(nlResult.disp),
+    eqLin: eqVLin ? Array.from(eqVLin) : [], eqNl: eqVNl ? Array.from(eqVNl) : [],
+    thdTotal: nlResult.thdTotal ? Array.from(nlResult.thdTotal) : [],
+    thd2: nlResult.thd2 ? Array.from(nlResult.thd2) : [],
+    thd3: nlResult.thd3 ? Array.from(nlResult.thd3) : []
+  };
 }
 
 // 绘制 Bl(x)/Cms(x) 拟合曲线（含原始数据散点）
@@ -1309,13 +1396,66 @@ function exportPNG(chartId) {
   a.click();
 }
 
+// 图表显隐切换
+function toggleChart(type, cb) {
+  const wrap = document.getElementById('wrap' + type);
+  if (wrap) wrap.style.display = cb.checked ? '' : 'none';
+}
+
+// 按图表导出CSV
+function exportCSV_chart(type) {
+  const ed = window._exportData;
+  if (!ed) { alert('请先计算线性响应'); return; }
+  let csv = 'Freq(Hz),';
+  let getCol;
+  switch (type) {
+    case 'SPL': csv += 'SPL(dB),MaxSPL(dB)\n'; getCol = i => `${ed.spl[i]},${ed.maxSPL[i]}`; break;
+    case 'Disp': csv += 'Disp(mm)\n'; getCol = i => `${ed.disp[i]}`; break;
+    case 'EQ': csv += 'EQ_Voltage(Vrms)\n'; getCol = i => `${ed.eqVoltage[i]}`; break;
+    case 'Imp': csv += 'Impedance(Ω)\n'; getCol = i => `${ed.imp[i]}`; break;
+    case 'Phase': csv += 'Phase(deg)\n'; getCol = i => `${ed.phase[i]}`; break;
+    default: return;
+  }
+  for (let i = 0; i < ed.freqs.length; i++) {
+    csv += `${ed.freqs[i].toFixed(2)},${getCol(i)}\n`;
+  }
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `speaker_${type}.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// 非线性CSV导出
+function exportCSV_nl(type) {
+  const ed = window._exportDataNl;
+  if (!ed) { alert('请先计算非线性响应'); return; }
+  let csv = 'Freq(Hz),';
+  let getCol;
+  switch (type) {
+    case 'SPL': csv += 'SPL_lin(dB),SPL_nl(dB)\n'; getCol = i => `${ed.splLin[i]},${ed.splNl[i]}`; break;
+    case 'Disp': csv += 'Disp_lin(mm),Disp_nl(mm)\n'; getCol = i => `${ed.dispLin[i]},${ed.dispNl[i]}`; break;
+    case 'EQ': csv += 'EQ_lin(V),EQ_nl(V)\n'; getCol = i => `${ed.eqLin[i]},${ed.eqNl[i]}`; break;
+    case 'THD': csv += 'THD(%),H2(%),H3(%)\n'; getCol = i => `${ed.thdTotal[i]},${ed.thd2[i]},${ed.thd3[i]}`; break;
+    default: return;
+  }
+  for (let i = 0; i < ed.freqs.length; i++) {
+    csv += `${ed.freqs[i].toFixed(2)},${getCol(i)}\n`;
+  }
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `speaker_nl_${type}.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
+
 // 预置参数
 function loadPreset(type) {
   const presets = {
-    '2110': { re:6.8, le:0.03, bl:0.55, cms:6.3, mms:70, rms:0.06, sd:116, xmax:0.65 },
-    '1511': { re:7.5, le:0.04, bl:1.10, cms:0.40, mms:55, rms:0.07, sd:85, xmax:0.30 },
-    '1813': { re:4.0, le:0.02, bl:0.70, cms:0.55, mms:42, rms:0.05, sd:125, xmax:0.35 },
-    'custom': { re:8.0, le:0.06, bl:0.90, cms:0.35, mms:65, rms:0.06, sd:95, xmax:0.40 },
+    '2110': { re:6.8, le:28, bl:0.55, cms:6.3, mms:70, rms:0.06, sd:116, xmax:0.65 },
+    '1511': { re:7.5, le:40, bl:1.10, cms:0.40, mms:55, rms:0.07, sd:85, xmax:0.30 },
+    '1813': { re:4.0, le:20, bl:0.70, cms:0.55, mms:42, rms:0.05, sd:125, xmax:0.35 },
+    'custom': { re:8.0, le:60, bl:0.90, cms:0.35, mms:65, rms:0.06, sd:95, xmax:0.40 },
   };
   const pr = presets[type];
   if (!pr) return;
