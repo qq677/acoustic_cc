@@ -285,6 +285,7 @@ body::before {
       <div>Qms <span id="dp_qms">--</span></div>
       <div>Vas <span id="dp_vas">--</span> cm³</div>
       <div>SPL₀ <span id="dp_spl0">--</span> dB</div>
+      <div>P <span id="dp_power">--</span> W</div>
     </div>
 
     <div id="linearStatus" style="font-size:0.75em;color:var(--accent3)"></div>
@@ -295,10 +296,10 @@ body::before {
     <div class="chart-toolbar">
       <span class="chart-toolbar-title">显示:</span>
       <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('SPL',this)">SPL</label>
-      <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('Disp',this)">位移</label>
-      <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('EQ',this)">EQ</label>
-      <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('Imp',this)">阻抗</label>
-      <label class="chart-toggle"><input type="checkbox" checked onchange="toggleChart('Phase',this)">相位</label>
+      <label class="chart-toggle"><input type="checkbox" onchange="toggleChart('Disp',this)">位移</label>
+      <label class="chart-toggle"><input type="checkbox" onchange="toggleChart('EQ',this)">EQ</label>
+      <label class="chart-toggle"><input type="checkbox" onchange="toggleChart('Imp',this)">阻抗</label>
+      <label class="chart-toggle"><input type="checkbox" onchange="toggleChart('Phase',this)">相位</label>
       <span style="color:#444;margin:0 4px;">|</span>
       <span class="chart-toolbar-title">X轴:</span>
       <label class="chart-toggle"><input type="radio" name="xaxis" checked onchange="setXAxis('logarithmic')">对数</label>
@@ -308,19 +309,19 @@ body::before {
       <div class="chart-export"><button onclick="exportCSV_chart('SPL')" title="导出CSV">📥</button><button onclick="exportPNG('chartSPL')" title="导出PNG">🖼</button></div>
       <div class="chart-container"><canvas id="chartSPL"></canvas></div>
     </div>
-    <div class="chart-wrap" id="wrapDisp">
+    <div class="chart-wrap chart-wrap-hidden" id="wrapDisp">
       <div class="chart-export"><button onclick="exportCSV_chart('Disp')" title="导出CSV">📥</button><button onclick="exportPNG('chartDisp')" title="导出PNG">🖼</button></div>
       <div class="chart-container"><canvas id="chartDisp"></canvas></div>
     </div>
-    <div class="chart-wrap" id="wrapEQ">
+    <div class="chart-wrap chart-wrap-hidden" id="wrapEQ">
       <div class="chart-export"><button onclick="exportCSV_chart('EQ')" title="导出CSV">📥</button><button onclick="exportPNG('chartEQ')" title="导出PNG">🖼</button></div>
       <div class="chart-container"><canvas id="chartEQ"></canvas></div>
     </div>
-    <div class="chart-wrap" id="wrapImp">
+    <div class="chart-wrap chart-wrap-hidden" id="wrapImp">
       <div class="chart-export"><button onclick="exportCSV_chart('Imp')" title="导出CSV">📥</button><button onclick="exportPNG('chartImp')" title="导出PNG">🖼</button></div>
       <div class="chart-container"><canvas id="chartImp"></canvas></div>
     </div>
-    <div class="chart-wrap" id="wrapPhase">
+    <div class="chart-wrap chart-wrap-hidden" id="wrapPhase">
       <div class="chart-export">
         <label class="chart-toggle" style="margin-right:8px;"><input type="checkbox" onchange="setPhaseWrap(this)">卷曲相位</label>
         <button onclick="exportCSV_chart('Phase')" title="导出CSV">📥</button><button onclick="exportPNG('chartPhase')" title="导出PNG">🖼</button>
@@ -971,6 +972,7 @@ function calcAll() {
   document.getElementById('dp_qms').textContent = derived.Qms.toFixed(3);
   document.getElementById('dp_vas').textContent = (derived.Vas * 1e6).toFixed(3);
   document.getElementById('dp_spl0').textContent = derived.SPL0.toFixed(1);
+  document.getElementById('dp_power').textContent = (vrms * vrms / p.Re).toFixed(3);
 
   document.getElementById('linearStatus').textContent = '计算中...';
 
